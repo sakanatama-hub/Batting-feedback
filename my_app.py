@@ -5,14 +5,12 @@ import plotly.graph_objects as go
 import os
 import datetime
 import base64
+from streamlit_gsheets import GSheetsConnection
 
 # --- 基本設定 ---
 PW = "TOYOTABASEBALLCLUB"
-SPREADSHEET_ID = "1uXTl0qap2MWW2b1Y-dTUl5UZ7ierJvWv9znmLzCDnBk"
-# 直接CSVとして読み込む最強のURL
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/export?format=csv"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1uXTl0qap2MWW2b1Y-dTUl5UZ7ierJvWv9znmLzCDnBk/edit"
 
-# 選手リスト
 PLAYERS = [
     "#1 熊田 任洋", "#2 逢澤 崚介", "#3 三塚 武蔵", "#4 北村 祥治", "#5 前田 健伸",
     "#6 佐藤 勇基", "#7 西村 友哉", "#8 和田 佳大", "#9 今泉 颯太", "#10 福井 章吾",
@@ -45,54 +43,49 @@ def check_auth():
     return False
 
 if check_auth():
-    @st.cache_data(ttl=30)
+    # スプレッドシート接続設定
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    
+    @st.cache_data(ttl=10)
     def load_data():
-        df = pd.read_csv(CSV_URL)
-        # 日付と選手名の列を使いやすいように調整
-        if 'DateTime' in df.columns:
-            df['DateTime'] = pd.to_datetime(df['DateTime'], errors='coerce')
-        return df
+        # キャッシュを短くして、登録後すぐ反映されるようにしました
+        return conn.read(spreadsheet=SPREADSHEET_URL, worksheet="data")
 
-    db_df = load_data()
+    try:
+        db_df = load_data()
+    except:
+        # タブ名が「シート1」の場合の予備
+        db_df = conn.read(spreadsheet=SPREADSHEET_URL, worksheet="シート1")
 
-    # サイドバーメニュー
-    mode = st.sidebar.radio("機能を選択", ["📊 データ分析", "📥 新規登録"])
+    mode = st.sidebar.radio("メニュー", ["📊 データ分析", "📥 新規登録"])
 
     if mode == "📊 データ分析":
-        st.header("📊 打撃データ分析 (9分割ヒートマップ)")
-        
-        if db_df.empty or len(db_df) < 1:
-            st.warning("まだデータがありません。先に「新規登録」からアップロードしてください。")
+        st.header("📊 打撃データ分析")
+        if db_df.empty:
+            st.warning("スプレッドシートにデータがありません。")
         else:
-            # 選手選択
             target_player = st.sidebar.selectbox("選手を選択", PLAYERS)
+            # DateTimeを日付型に変換
+            db_df['DateTime'] = pd.to_datetime(db_df['DateTime'], errors='coerce')
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             
             if pdf.empty:
                 st.info(f"{target_player} 選手のデータはまだありません。")
             else:
-                # 日付フィルタ
                 pdf['Date_Only'] = pdf['DateTime'].dt.date
-                min_d, max_d = pdf['Date_Only'].min(), pdf['Date_Only'].max()
-                d_range = st.sidebar.date_input("分析期間", value=(min_d, max_d))
+                d_range = st.sidebar.date_input("分析期間", value=(pdf['Date_Only'].min(), pdf['Date_Only'].max()))
                 
                 if isinstance(d_range, tuple) and len(d_range) == 2:
                     vdf = pdf[(pdf['Date_Only'] >= d_range[0]) & (pdf['Date_Only'] <= d_range[1])].copy()
-                    
-                    # 分析する項目の選択（バットスピード、打球速度など）
-                    numeric_cols = vdf.select_dtypes(include=[np.number]).columns.tolist()
-                    exclude = ["StrikeZoneX", "StrikeZoneY", "Unique ID"]
-                    metrics = [c for c in numeric_cols if c not in exclude]
-                    target_metric = st.sidebar.selectbox("表示する数値", metrics if metrics else ["データなし"])
+                    metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c and "ID" not in c]
+                    target_metric = st.sidebar.selectbox("表示する数値", metrics)
 
-                    if not vdf.empty and target_metric != "データなし":
-                        # 数値に変換して欠損値を消す
+                    if not vdf.empty:
+                        # 5x5グリッド計算（以前のロジック）
                         vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                         vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
-                        vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
                         clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
 
-                        # 5x5グリッド計算
                         def get_grid_pos(x, y):
                             if y > 110: r = 0
                             elif 88.2 < y <= 110: r = 1
@@ -106,38 +99,53 @@ if check_auth():
                             else: c = 4
                             return r, c
 
-                        grid = np.zeros((5, 5))
-                        counts = np.zeros((5, 5))
+                        grid = np.zeros((5, 5)); counts = np.zeros((5, 5))
                         for _, row in clean_df.iterrows():
                             r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
-                            grid[r, c] += row[target_metric]
-                            counts[r, c] += 1
+                            grid[r, c] += row[target_metric]; counts[r, c] += 1
                         
                         display_grid = np.where(counts > 0, grid / counts, 0)
 
-                        # Plotlyで描画
                         fig = go.Figure(data=go.Heatmap(
                             z=np.flipud(display_grid),
-                            x=['極内','内','中','外','極外'],
-                            y=['極高','高','中','低','極低'],
-                            colorscale='YlOrRd',
-                            text=np.flipud(np.round(display_grid, 1)),
-                            texttemplate="%{text}",
-                            showscale=True
+                            x=['極内','内','中','外','極外'], y=['極高','高','中','低','極低'],
+                            colorscale='YlOrRd', text=np.flipud(np.round(display_grid, 1)),
+                            texttemplate="%{text}", showscale=True
                         ))
-
                         bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
                         if bg_img:
-                            fig.add_layout_image(dict(
-                                source=bg_img, xref="x", yref="y",
-                                x=-0.5, y=4.5, sizex=5, sizey=5,
-                                sizing="stretch", opacity=0.4, layer="below"
-                            ))
-                        
-                        fig.update_layout(width=700, height=700, title=f"{target_player}: {target_metric} 分布")
+                            fig.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.4, layer="below"))
+                        fig.update_layout(width=700, height=700)
                         st.plotly_chart(fig)
 
     elif mode == "📥 新規登録":
-        st.header("📥 データ登録")
-        # 以前のCSVアップロード＆スプレッドシート保存ロジック（省略せずに以前のものを活用可能）
-        st.info("ここにCSVをドラッグ＆ドロップしてスプレッドシートを更新する機能を配置します。")
+        st.header("📥 新規データ登録")
+        st.write("計測したCSVファイルをアップロードすると、スプレッドシートに自動追加されます。")
+        
+        target_player = st.selectbox("登録する選手", PLAYERS)
+        uploaded_file = st.file_uploader("CSVファイルをアップロード", type="csv")
+        
+        if st.button("スプレッドシートへ保存"):
+            if uploaded_file is not None:
+                try:
+                    # アップロードされたデータを読み込む
+                    new_df = pd.read_csv(uploaded_file)
+                    
+                    # 選手名と登録日時を自動付与
+                    new_df['Player Name'] = target_player
+                    new_df['DateTime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    # 現在のスプレッドシートの内容と合体させる
+                    combined_df = pd.concat([db_df, new_df], ignore_index=True)
+                    
+                    # スプレッドシートを更新
+                    conn.update(spreadsheet=SPREADSHEET_URL, data=combined_df)
+                    
+                    st.success(f"{target_player} 選手のデータを正常に保存しました！")
+                    st.balloons()
+                    # キャッシュをクリアして最新データが見れるようにする
+                    st.cache_data.clear()
+                except Exception as e:
+                    st.error(f"エラーが発生しました: {e}")
+            else:
+                st.warning("ファイルを選択してください。")
