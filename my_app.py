@@ -48,18 +48,14 @@ if check_auth():
     
     @st.cache_data(ttl=10)
     def load_data():
-        # キャッシュを短くして、登録後すぐ反映されるようにしました
-        return conn.read(spreadsheet=SPREADSHEET_URL, worksheet="data")
+        # 日本語のシート名を指定せず、一番最初のシートを自動で読み込むようにしました
+        return conn.read(spreadsheet=SPREADSHEET_URL)
 
     try:
         db_df = load_data()
-    except:
-        # タブ名が「シート1」の場合の予備
-        db_df = conn.read(spreadsheet=SPREADSHEET_URL, worksheet="シート1")
-
-    mode = st.sidebar.radio("メニュー", ["📊 データ分析", "📥 新規登録"])
-
-    if mode == "📊 データ分析":
+    except Exception as e:
+        st.error("データの読み込みに失敗しました。Secretsの設定とスプレッドシートの共有設定を再確認してください。")
+        st.stop()
         st.header("📊 打撃データ分析")
         if db_df.empty:
             st.warning("スプレッドシートにデータがありません。")
