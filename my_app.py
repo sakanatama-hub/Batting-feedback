@@ -5,12 +5,15 @@ import plotly.graph_objects as go
 import os
 import datetime
 import base64
+import requests
 from streamlit_gsheets import GSheetsConnection
 
 # --- 基本設定 ---
 PW = "TOYOTABASEBALLCLUB"
-# URLは一番シンプルな形に固定
+# 閲覧用のURL
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1uXTl0qap2MWW2b1Y-dTUl5UZ7ierJvWv9znmLzCDnBk/edit"
+# 書き込み用のURL (先ほどコピーしていただいたもの)
+GAS_URL = "https://script.google.com/macros/s/AKfycbzl5UzwgcbsIzFRZgaW3oeq5w6RJ1atDc8Ojs3UBi_BYte0noqvDTGihNbehVTGQgFc/exec"
 
 PLAYERS = [
     "#1 熊田 任洋", "#2 逢澤 崚介", "#3 三塚 武蔵", "#4 北村 祥治", "#5 前田 健伸",
@@ -44,18 +47,18 @@ def check_auth():
     return False
 
 if check_auth():
-    # スプレッドシート接続
+    # スプレッドシート接続（読み込み用）
     conn = st.connection("gsheets", type=GSheetsConnection)
     
     @st.cache_data(ttl=10)
     def load_data():
-        # 日本語エラー回避のためワークシート指定なし（一番左のシートを読み込む）
+        # 一番左のシートを読み込む
         return conn.read(spreadsheet=SPREADSHEET_URL)
 
     try:
         db_df = load_data()
-    except Exception as e:
-        st.error("データの読み込みに失敗しました。スプレッドシートの共有設定を確認してください。")
+    except:
+        st.error("データの読み込みに失敗しました。")
         st.stop()
 
     mode = st.sidebar.radio("メニュー", ["📊 データ分析", "📥 新規登録"])
@@ -126,15 +129,30 @@ if check_auth():
             if uploaded_file is not None:
                 try:
                     new_df = pd.read_csv(uploaded_file)
+                    # 選手名と日付を追加
                     new_df['Player Name'] = target_player
                     new_df['DateTime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    combined_df = pd.concat([db_df, new_df], ignore_index=True)
-                    conn.update(spreadsheet=SPREADSHEET_URL, data=combined_df)
-                    st.success(f"{target_player} 選手のデータを保存しました！")
-                    st.balloons()
-                    st.cache_data.clear()
-                    st.rerun()
+                    
+                    # スプレッドシートの列順に合わせてデータを整理
+                    # (スプレッドシートの1行目と同じ項目のみを抽出)
+                    cols = db_df.columns.tolist()
+                    # もし新しいCSVにない列があれば空にする
+                    for c in cols:
+                        if c not in new_df.columns:
+                            new_df[c] = ""
+                    
+                    upload_data = new_df[cols].values.tolist()
+                    
+                    # GAS経由でデータを送信
+                    response = requests.post(GAS_URL, json=upload_data)
+                    
+                    if "Success" in response.text:
+                        st.success(f"{target_player} 選手のデータを保存しました！")
+                        st.balloons()
+                        st.cache_data.clear()
+                    else:
+                        st.error(f"保存に失敗しました。GASの設定を確認してください。: {response.text}")
                 except Exception as e:
-                    st.error(f"保存失敗: {e}")
+                    st.error(f"エラーが発生しました: {e}")
             else:
                 st.warning("ファイルを選択してください。")
