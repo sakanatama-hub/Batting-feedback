@@ -10,9 +10,7 @@ from streamlit_gsheets import GSheetsConnection
 
 # --- 基本設定 ---
 PW = "TOYOTABASEBALLCLUB"
-# 閲覧用のURL
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1uXTl0qap2MWW2b1Y-dTUl5UZ7ierJvWv9znmLzCDnBk/edit"
-# 書き込み用のURL (先ほどコピーしていただいたもの)
 GAS_URL = "https://script.google.com/macros/s/AKfycbzl5UzwgcbsIzFRZgaW3oeq5w6RJ1atDc8Ojs3UBi_BYte0noqvDTGihNbehVTGQgFc/exec"
 
 PLAYERS = [
@@ -47,12 +45,10 @@ def check_auth():
     return False
 
 if check_auth():
-    # スプレッドシート接続（読み込み用）
     conn = st.connection("gsheets", type=GSheetsConnection)
     
     @st.cache_data(ttl=10)
     def load_data():
-        # 一番左のシートを読み込む
         return conn.read(spreadsheet=SPREADSHEET_URL)
 
     try:
@@ -129,21 +125,18 @@ if check_auth():
             if uploaded_file is not None:
                 try:
                     new_df = pd.read_csv(uploaded_file)
-                    # 選手名と日付を追加
                     new_df['Player Name'] = target_player
                     new_df['DateTime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     
-                    # スプレッドシートの列順に合わせてデータを整理
-                    # (スプレッドシートの1行目と同じ項目のみを抽出)
                     cols = db_df.columns.tolist()
-                    # もし新しいCSVにない列があれば空にする
                     for c in cols:
                         if c not in new_df.columns:
                             new_df[c] = ""
                     
-                    upload_data = new_df[cols].values.tolist()
+                    # ここが修正ポイント：空欄(NaN)を空の文字""に変換する
+                    final_df = new_df[cols].replace({np.nan: ""})
+                    upload_data = final_df.values.tolist()
                     
-                    # GAS経由でデータを送信
                     response = requests.post(GAS_URL, json=upload_data)
                     
                     if "Success" in response.text:
@@ -151,7 +144,7 @@ if check_auth():
                         st.balloons()
                         st.cache_data.clear()
                     else:
-                        st.error(f"保存に失敗しました。GASの設定を確認してください。: {response.text}")
+                        st.error(f"保存失敗: {response.text}")
                 except Exception as e:
                     st.error(f"エラーが発生しました: {e}")
             else:
