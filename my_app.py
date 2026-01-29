@@ -9,7 +9,7 @@ import base64
 from streamlit_gsheets import GSheetsConnection
 
 # --- 基本設定 ---
-PW = "TOYOTABASEBALLCLUB"
+PW = "1189"
 # スプレッドシートのURL（ここに自分のシートのURLを貼り付けてください）
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1uXTl0qap2MWW2b1Y-dTUl5UZ7ierJvWv9znmLzCDnBk/edit"
 
