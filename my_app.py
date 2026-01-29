@@ -11,7 +11,7 @@ from streamlit_gsheets import GSheetsConnection
 # --- 基本設定 ---
 PW = "TOYOTABASEBALLCLUB"
 # スプレッドシートのURL（ここに自分のシートのURLを貼り付けてください）
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1uXTl0qap2MWW2b1Y-dTUl5UZ7ierJvWv9znmLzCDnBk/edit?gid=0#gid=0"
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1uXTl0qap2MWW2b1Y-dTUl5UZ7ierJvWv9znmLzCDnBk/edit"
 
 PLAYERS = [
     "#1 熊田 任洋", "#2 逢澤 崚介", "#3 三塚 武蔵", "#4 北村 祥治", "#5 前田 健伸",
