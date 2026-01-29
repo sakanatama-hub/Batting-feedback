@@ -49,7 +49,7 @@ if check_auth():
     conn = st.connection("gsheets", type=GSheetsConnection)
     
     def load_data():
-        return conn.read(spreadsheet=SPREADSHEET_URL, worksheet="シート1")
+        return conn.read(spreadsheet=SPREADSHEET_URL, worksheet="data")
 
     db_df = load_data()
     if not db_df.empty:
