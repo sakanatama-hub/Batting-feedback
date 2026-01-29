@@ -9,6 +9,7 @@ from streamlit_gsheets import GSheetsConnection
 
 # --- 基本設定 ---
 PW = "TOYOTABASEBALLCLUB"
+# URLは一番シンプルな形に固定
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1uXTl0qap2MWW2b1Y-dTUl5UZ7ierJvWv9znmLzCDnBk/edit"
 
 PLAYERS = [
@@ -43,25 +44,28 @@ def check_auth():
     return False
 
 if check_auth():
-    # スプレッドシート接続設定
+    # スプレッドシート接続
     conn = st.connection("gsheets", type=GSheetsConnection)
     
     @st.cache_data(ttl=10)
     def load_data():
-        # 日本語のシート名を指定せず、一番最初のシートを自動で読み込むようにしました
+        # 日本語エラー回避のためワークシート指定なし（一番左のシートを読み込む）
         return conn.read(spreadsheet=SPREADSHEET_URL)
 
     try:
         db_df = load_data()
     except Exception as e:
-        st.error("データの読み込みに失敗しました。Secretsの設定とスプレッドシートの共有設定を再確認してください。")
+        st.error("データの読み込みに失敗しました。スプレッドシートの共有設定を確認してください。")
         st.stop()
+
+    mode = st.sidebar.radio("メニュー", ["📊 データ分析", "📥 新規登録"])
+
+    if mode == "📊 データ分析":
         st.header("📊 打撃データ分析")
         if db_df.empty:
             st.warning("スプレッドシートにデータがありません。")
         else:
             target_player = st.sidebar.selectbox("選手を選択", PLAYERS)
-            # DateTimeを日付型に変換
             db_df['DateTime'] = pd.to_datetime(db_df['DateTime'], errors='coerce')
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             
@@ -76,8 +80,7 @@ if check_auth():
                     metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c and "ID" not in c]
                     target_metric = st.sidebar.selectbox("表示する数値", metrics)
 
-                    if not vdf.empty:
-                        # 5x5グリッド計算（以前のロジック）
+                    if not vdf.empty and target_metric:
                         vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                         vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
                         clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
@@ -116,32 +119,22 @@ if check_auth():
 
     elif mode == "📥 新規登録":
         st.header("📥 新規データ登録")
-        st.write("計測したCSVファイルをアップロードすると、スプレッドシートに自動追加されます。")
-        
         target_player = st.selectbox("登録する選手", PLAYERS)
         uploaded_file = st.file_uploader("CSVファイルをアップロード", type="csv")
         
         if st.button("スプレッドシートへ保存"):
             if uploaded_file is not None:
                 try:
-                    # アップロードされたデータを読み込む
                     new_df = pd.read_csv(uploaded_file)
-                    
-                    # 選手名と登録日時を自動付与
                     new_df['Player Name'] = target_player
                     new_df['DateTime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    
-                    # 現在のスプレッドシートの内容と合体させる
                     combined_df = pd.concat([db_df, new_df], ignore_index=True)
-                    
-                    # スプレッドシートを更新
                     conn.update(spreadsheet=SPREADSHEET_URL, data=combined_df)
-                    
-                    st.success(f"{target_player} 選手のデータを正常に保存しました！")
+                    st.success(f"{target_player} 選手のデータを保存しました！")
                     st.balloons()
-                    # キャッシュをクリアして最新データが見れるようにする
                     st.cache_data.clear()
+                    st.rerun()
                 except Exception as e:
-                    st.error(f"エラーが発生しました: {e}")
+                    st.error(f"保存失敗: {e}")
             else:
                 st.warning("ファイルを選択してください。")
