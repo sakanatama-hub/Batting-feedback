@@ -83,24 +83,25 @@ if check_auth():
                 target_date = st.sidebar.selectbox("日付を選択", sorted(pdf['Date_Only'].unique(), reverse=True))
                 vdf = pdf[pdf['Date_Only'] == target_date].copy()
                 
-                # 指標選択（ExitVelocity, LaunchAngleなど）
                 metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
                 target_metric = st.selectbox("分析指標を選択", metrics if metrics else ["データなし"])
 
                 col1, col2 = st.columns(2)
                 
+                bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
+
                 with col1:
-                    st.subheader("🎯 コース別平均（ヒートマップ）")
+                    st.subheader("🎯 コース別平均")
                     if target_metric != "データなし":
                         clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
                         def get_grid_pos(x, y):
-                            # 高低
+                            # 高低（行）
                             if y > 110: r = 0
                             elif 88.2 < y <= 110: r = 1
                             elif 66.6 < y <= 88.2: r = 2
                             elif 45 <= y <= 66.6: r = 3
                             else: r = 4
-                            # 左右
+                            # 左右（列）
                             if x < -28.8: c = 0
                             elif -28.8 <= x < -9.6: c = 1
                             elif -9.6 <= x <= 9.6: c = 2
@@ -114,38 +115,50 @@ if check_auth():
                             grid[r, c] += row[target_metric]; counts[r, c] += 1
                         display_grid = np.where(counts > 0, grid / counts, 0)
                         
-                        fig_h = go.Figure(data=go.Heatmap(z=np.flipud(display_grid), x=['極内','内','中','外','極外'], y=['極低','低','中','高','極高'], colorscale='YlOrRd', text=np.flipud(np.round(display_grid, 1)), texttemplate="%{text}"))
-                        bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
+                        # ヒートマップ描画
+                        fig_h = go.Figure(data=go.Heatmap(
+                            z=np.flipud(display_grid),
+                            x=['極内','内','中','外','極外'],
+                            y=['極低','低','中','高','極高'],
+                            colorscale='YlOrRd',
+                            text=np.flipud(np.round(display_grid, 1)),
+                            texttemplate="%{text}",
+                            showscale=True
+                        ))
+                        
+                        # ヒートマップに背景画像をピタッと合わせる (座標0-4の範囲)
                         if bg_img:
-                            fig_h.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.5, layer="below"))
-                        fig_h.update_layout(width=450, height=450)
+                            fig_h.add_layout_image(dict(
+                                source=bg_img, xref="x", yref="y",
+                                x=-0.5, y=4.5, sizex=5, sizey=5,
+                                sizing="stretch", opacity=0.6, layer="below"
+                            ))
+                        
+                        fig_h.update_layout(width=500, height=500, margin=dict(l=40, r=40, b=40, t=40))
                         st.plotly_chart(fig_h)
 
                 with col2:
-                    st.subheader("📍 打球位置（散布図）")
-                    # ExcelのStrikeZoneX, Yをそのまま散布図としてプロット
+                    st.subheader("📍 打点プロット")
                     if 'StrikeZoneX' in vdf.columns and 'StrikeZoneY' in vdf.columns:
                         fig_s = go.Figure(data=go.Scatter(
-                            x=vdf['StrikeZoneX'], 
-                            y=vdf['StrikeZoneY'], 
-                            mode='markers', 
-                            marker=dict(size=12, color='blue', line=dict(width=1, color='DarkSlateGrey')),
-                            text=vdf[target_metric] if target_metric != "データなし" else ""
+                            x=vdf['StrikeZoneX'], y=vdf['StrikeZoneY'],
+                            mode='markers',
+                            marker=dict(size=12, color='blue', line=dict(width=1, color='white'))
                         ))
-                        # 捕手目線背景を散布図にも追加
-                        if bg_img:
-                            fig_s.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-50, y=150, sizex=100, sizey=150, sizing="stretch", opacity=0.3, layer="below"))
-                        
-                        fig_s.update_layout(width=450, height=450, xaxis=dict(range=[-50, 50]), yaxis=dict(range=[0, 150]))
+                        # 散布図側は画像なしでシンプルに（または必要なら追加可）
+                        fig_s.update_layout(
+                            width=500, height=500,
+                            xaxis=dict(range=[-50, 50], title="左右"),
+                            yaxis=dict(range=[0, 150], title="高低")
+                        )
                         st.plotly_chart(fig_s)
                 
-                st.write("📝 生データ確認")
+                st.write("📝 詳細データ")
                 st.dataframe(vdf)
 
     elif mode == "📥 新規登録":
         st.header("📥 練習データ登録")
         target_player = st.selectbox("選手を選択", PLAYERS)
-        # 日付指定カレンダー
         target_date = st.date_input("登録日を選択", datetime.date.today())
         uploaded_file = st.file_uploader("ExcelまたはCSVをアップロード", type=["csv", "xlsx"])
         
@@ -154,12 +167,11 @@ if check_auth():
                 try:
                     df_up = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
                     df_up['Player Name'] = target_player
-                    # 指定した日付をDateTime列にセット
                     df_up['DateTime'] = datetime.datetime.combine(target_date, datetime.datetime.now().time())
                     
                     new_db = pd.concat([db_df, df_up], ignore_index=True).replace({np.nan: ""})
                     if save_to_github(new_db) in [200, 201]:
-                        st.success(f"{target_date} のデータを正常に保存しました！")
+                        st.success(f"{target_date} のデータを保存しました！")
                         st.balloons()
                         st.cache_data.clear()
                     else: st.error("保存失敗")
