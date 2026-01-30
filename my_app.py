@@ -61,33 +61,33 @@ else:
         # --- 図の作成 ---
         fig = go.Figure()
 
-        # 1. 地面：すべて緑（芝生イメージ）
-        fig.add_shape(type="rect", x0=-200, x1=200, y0=-50, y1=250, fillcolor="#2E8B57", line_width=0, layer="below")
+        # 1. 地面：落ち着いた深緑の芝生 (#1a4314)
+        fig.add_shape(type="rect", x0=-200, x1=200, y0=-50, y1=250, fillcolor="#1a4314", line_width=0, layer="below")
         
-        # 2. ホームベース：尖った方を画面の下に向ける
-        # 頂点が (0, 10)、上の辺が (y=40)
+        # 2. ホームベース：尖った方が下
         fig.add_shape(type="path", path="M -12 40 L 12 40 L 12 25 L 0 10 L -12 25 Z", 
                       fillcolor="white", line=dict(color="#444", width=2), layer="below")
         
-        # 3. ファウルライン（ホームベースの角から斜め上に広がる）
-        line_style = dict(color="white", width=4)
-        fig.add_shape(type="line", x0=-12, y0=25, x1=-180, y1=220, line=line_style, layer="below")
-        fig.add_shape(type="line", x0=12, y0=25, x1=180, y1=220, line=line_style, layer="below")
-        
-        # 4. バッターボックス
-        box_line = dict(color="rgba(255,255,255,0.8)", width=3)
-        fig.add_shape(type="rect", x0=-45, x1=-18, y0=15, y1=65, line=box_line, layer="below")
-        fig.add_shape(type="rect", x0=18, x1=45, y0=15, y1=65, line=box_line, layer="below")
+        # 3. バッターボックス
+        box_line = dict(color="rgba(255,255,255,0.7)", width=3)
+        fig.add_shape(type="rect", x0=-48, x1=-18, y0=15, y1=70, line=box_line, layer="below")
+        fig.add_shape(type="rect", x0=18, x1=48, y0=15, y1=70, line=box_line, layer="below")
 
-        # 5. 立体的なコース別グリッド（上が狭い台形）
+        # 4. ファウルライン（ボックスの外角から開始）
+        line_style = dict(color="white", width=4)
+        # 1塁線：左側ボックスの下角の外から
+        fig.add_shape(type="line", x0=-48, y0=15, x1=-180, y1=220, line=line_style, layer="below")
+        # 3塁線：右側ボックスの下角の外から
+        fig.add_shape(type="line", x0=48, y0=15, x1=180, y1=220, line=line_style, layer="below")
+
+        # 5. 立体的なコース別グリッド
         if target_metric != "データなし":
-            grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
-            # グリッド計算ロジック
             def get_grid_pos(x, y):
                 r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
                 c = 0 if x < -28.8 else 1 if x < -9.6 else 2 if x <= 9.6 else 3 if x <= 28.8 else 4
                 return r, c
 
+            grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
             for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
                 r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
                 grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
@@ -96,17 +96,17 @@ else:
             for r in range(5):
                 for c in range(5):
                     y_l = 85 + (4-r)*16; y_h = y_l + 15
-                    p_l = 1 - (y_l * 0.001); p_h = 1 - (y_h * 0.001)
+                    p_l = 1 - (y_l * 0.001); p_h = 1 - (y_high * 0.001) if 'y_high' in locals() else 1 - (y_h * 0.001)
                     w = 65
                     step_l = (w * p_l) / 2.5; step_h = (w * p_h) / 2.5
                     xl1 = - (w * p_l) / 2 + c * step_l; xl2 = xl1 + step_l
                     xh1 = - (w * p_h) / 2 + c * step_h; xh2 = xh1 + step_h
                     
                     val = display_grid[r, c]
-                    color = f"rgba(255, {max(0, 255-int(val*2.2))}, 0, 0.85)" if val > 0 else "rgba(255,255,255,0.1)"
+                    color = f"rgba(255, {max(0, 255-int(val*2.2))}, 0, 0.85)" if val > 0 else "rgba(255,255,255,0.05)"
                     
                     fig.add_shape(type="path", path=f"M {xl1} {y_l} L {xl2} {y_l} L {xh2} {y_h} L {xh1} {y_h} Z",
-                                  fillcolor=color, line=dict(color="#333", width=1))
+                                  fillcolor=color, line=dict(color="#222", width=1))
                     if val > 0:
                         fig.add_annotation(x=(xl1+xl2+xh1+xh2)/4, y=(y_l+y_h)/2,
                                            text=str(round(val,1)), showarrow=False, 
