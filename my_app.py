@@ -43,7 +43,6 @@ else:
     db_df = load_data_from_github()
     st.title("🔵 選手別・コース別分析")
 
-    # 図を最大化するため左右の余白を最小に
     _, center_col, _ = st.columns([0.05, 9.9, 0.05])
 
     with center_col:
@@ -61,38 +60,26 @@ else:
 
             fig = go.Figure()
 
-            # --- 背景とフィールド ---
-            # 1. 全体の芝生
-            fig.add_shape(type="rect", x0=-200, x1=200, y0=-50, y1=300, fillcolor="#1a4314", line_width=0, layer="below")
+            # --- 背景とフィールド（グリッドに合わせてスケール調整） ---
+            fig.add_shape(type="rect", x0=-300, x1=300, y0=-100, y1=450, fillcolor="#1a4314", line_width=0, layer="below")
+            fig.add_shape(type="path", path="M -80 100 L -300 400 L 300 400 L 80 100 Z", fillcolor="#8B4513", line_width=0, layer="below")
+            fig.add_shape(type="circle", x0=-50, x1=50, y0=-20, y1=80, fillcolor="#8B4513", line_width=0, layer="below")
+            fig.add_shape(type="path", path="M -15 50 L 15 50 L 15 35 L 0 10 L -15 35 Z", fillcolor="white", line=dict(color="#444", width=2), layer="below")
             
-            # 2. フェアゾーンの土
-            fig.add_shape(type="path", path="M -50 85 L -200 280 L 200 280 L 50 85 Z", 
-                          fillcolor="#8B4513", line_width=0, layer="below")
-            
-            # 3. ホームベース周りの土
-            fig.add_shape(type="circle", x0=-30, x1=30, y0=-10, y1=60, fillcolor="#8B4513", line_width=0, layer="below")
-
-            # 4. ホームベース
-            fig.add_shape(type="path", path="M -12 40 L 12 40 L 12 28 L 0 10 L -12 28 Z", 
-                          fillcolor="white", line=dict(color="#444", width=2), layer="below")
-            
-            # 5. バッターボックス（中を緑に）
             box_style = dict(fillcolor="#1a4314", line=dict(color="rgba(255,255,255,0.8)", width=3), layer="below")
-            fig.add_shape(type="path", path="M -55 10 L -22 10 L -18 85 L -48 85 Z", **box_style)
-            fig.add_shape(type="path", path="M 55 10 L 22 10 L 18 85 L 50 85 Z", **box_style)
+            fig.add_shape(type="path", path="M -85 15 L -40 15 L -35 100 L -80 100 Z", **box_style)
+            fig.add_shape(type="path", path="M 85 15 L 40 15 L 35 100 L 80 100 Z", **box_style)
+            fig.add_shape(type="line", x0=-80, y0=100, x1=-280, y1=380, line=dict(color="white", width=4), layer="below")
+            fig.add_shape(type="line", x0=80, y0=100, x1=280, y1=380, line=dict(color="white", width=4), layer="below")
 
-            # 6. ファウルライン
-            fig.add_shape(type="line", x0=-48, y0=85, x1=-195, y1=270, line=dict(color="white", width=4), layer="below")
-            fig.add_shape(type="line", x0=48, y0=85, x1=195, y1=270, line=dict(color="white", width=4), layer="below")
-
-            # --- 正方形グリッドシステム ---
-            # 各マスが完全な正方形になるよう、幅と高さを等しく設定
-            side = 20  # 1マスの辺の長さ
+            # --- 【特大】正方形グリッドシステム ---
+            side = 35  # 1マスのサイズを大幅にアップ
             z_x_start = -(side * 2.5)
-            z_y_start = 120
+            z_y_start = 140 # 少し上に配置
             
             if target_metric != "データなし":
                 def get_grid_pos(x, y):
+                    # オリジナルのデータ範囲に基づいた判定
                     r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
                     c = 0 if x < -28.8 else 1 if x < -9.6 else 2 if x <= 9.6 else 3 if x <= 28.8 else 4
                     return r, c
@@ -109,25 +96,23 @@ else:
                         y1 = z_y_start + (5 - r) * side; y0 = y1 - side
                         val = display_grid[r, c]
                         
-                        # 色の定義（以前の指示通り、白ベースに映えるYlOrRd系）
-                        color = f"rgba(255, {max(0, 255-int(val*2.5))}, 0, 0.9)" if val > 0 else "rgba(255,255,255,0.15)"
+                        color = f"rgba(255, {max(0, 255-int(val*2.5))}, 0, 0.95)" if val > 0 else "rgba(255,255,255,0.15)"
                         
                         fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, 
-                                      fillcolor=color, line=dict(color="#333", width=1))
+                                      fillcolor=color, line=dict(color="#222", width=1.5))
                         if val > 0:
                             fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=str(round(val,1)),
-                                               showarrow=False, font=dict(size=18, color="white", weight="bold"))
+                                               showarrow=False, font=dict(size=24, color="white", weight="bold"))
 
-            # 7. 真ん中9マスの赤枠（3x3部分）
+            # 7. 真ん中9マスの赤枠（さらに太く強調）
             fig.add_shape(type="rect", x0=z_x_start + side, x1=z_x_start + 4*side, 
                           y0=z_y_start + side, y1=z_y_start + 4*side, 
-                          line=dict(color="#ff2222", width=7))
+                          line=dict(color="#ff2222", width=10))
 
-            # 特大サイズかつアスペクト比を維持
             fig.update_layout(
-                width=1100, height=900,
-                xaxis=dict(range=[-150, 150], visible=False, fixedrange=True),
-                yaxis=dict(range=[-20, 280], visible=False, fixedrange=True),
+                width=1100, height=1000,
+                xaxis=dict(range=[-200, 200], visible=False, fixedrange=True),
+                yaxis=dict(range=[-30, 420], visible=False, fixedrange=True),
                 margin=dict(l=0, r=0, t=10, b=0),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
             )
