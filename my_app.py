@@ -61,38 +61,40 @@ else:
             fig = go.Figure()
 
             # --- 背景：芝生（深緑） ---
-            fig.add_shape(type="rect", x0=-300, x1=300, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
+            fig.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
             
-            # --- フィールドパーツの座標定義 ---
-            L_start_x, L_start_y = 90, 100
-            R_start_x, R_start_y = -90, 100
-            Outer_x, Outer_y = 350, 600 # 上部までしっかり茶色にするためyを高く
+            # --- フィールドパーツ ---
+            # ワイドなラインと土（上部まで塗り潰し）
+            L_x, L_y = 100, 110
+            R_x, R_y = -100, 110
+            Outer_x, Outer_y = 450, 600
             
-            # フェアゾーンの土（茶色）
             fig.add_shape(type="path", 
-                          path=f"M {R_start_x} {R_start_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_start_x} {L_start_y} Z", 
+                          path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", 
                           fillcolor="#8B4513", line_width=0, layer="below")
             
-            # ホームベース周りの土
-            fig.add_shape(type="circle", x0=-80, x1=80, y0=-40, y1=120, fillcolor="#8B4513", line_width=0, layer="below")
+            # 土のサークル
+            fig.add_shape(type="circle", x0=-100, x1=100, y0=-50, y1=150, fillcolor="#8B4513", line_width=0, layer="below")
             
-            # 【復元】ホームベース
-            fig.add_shape(type="path", path="M -18 60 L 18 60 L 18 40 L 0 5 L -18 40 Z", 
+            # 【巨大化】ホームベース
+            fig.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", 
                           fillcolor="white", line=dict(color="#444", width=3), layer="below")
             
-            # 【復元】バッターボックス
+            # 【巨大化】バッターボックス（中を緑に）
             box_style = dict(fillcolor="#1a4314", line=dict(color="rgba(255,255,255,0.8)", width=4), layer="below")
-            fig.add_shape(type="path", path="M -110 20 L -55 20 L -50 125 L -105 125 Z", **box_style)
-            fig.add_shape(type="path", path="M 110 20 L 55 20 L 50 125 L 105 125 Z", **box_style)
+            fig.add_shape(type="path", path="M -130 20 L -65 20 L -60 140 L -125 140 Z", **box_style)
+            fig.add_shape(type="path", path="M 130 20 L 65 20 L 60 140 L 125 140 Z", **box_style)
 
             # ファウルライン
-            fig.add_shape(type="line", x0=L_start_x, y0=L_start_y, x1=Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
-            fig.add_shape(type="line", x0=R_start_x, y0=R_start_y, x1=-Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
+            fig.add_shape(type="line", x0=L_x, y0=L_y, x1=Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
+            fig.add_shape(type="line", x0=R_x, y0=R_y, x1=-Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
 
-            # --- 25分割グリッド：正方形維持 ---
-            grid_side = 40 
-            z_x_start = -(grid_side * 2.5)
-            z_y_start = 160 # パーツに合わせて少し上に配置
+            # --- 25分割グリッド：座標計算で「正方形」を維持 ---
+            # 図全体の比率に依存せず、xとyの増分を揃える
+            grid_side_x = 45  # x方向の1マスの幅
+            grid_side_y = 45  # y方向の1マスの幅（xと揃えることで正方形に）
+            z_x_start = -(grid_side_x * 2.5)
+            z_y_start = 180 
             
             if target_metric != "データなし":
                 def get_grid_pos(x, y):
@@ -108,8 +110,8 @@ else:
 
                 for r in range(5):
                     for c in range(5):
-                        x0 = z_x_start + c * grid_side; x1 = x0 + grid_side
-                        y1 = z_y_start + (5 - r) * grid_side; y0 = y1 - grid_side
+                        x0 = z_x_start + c * grid_side_x; x1 = x0 + grid_side_x
+                        y1 = z_y_start + (5 - r) * grid_side_y; y0 = y1 - grid_side_y
                         val = display_grid[r, c]
                         color = f"rgba(255, {max(0, 255-int(val*2.5))}, 0, 0.95)" if val > 0 else "rgba(255,255,255,0.2)"
                         
@@ -120,15 +122,14 @@ else:
                                                showarrow=False, font=dict(size=22, color="white", weight="bold"))
 
             # 真ん中9マスの赤枠
-            fig.add_shape(type="rect", x0=z_x_start + grid_side, x1=z_x_start + 4*grid_side, 
-                          y0=z_y_start + grid_side, y1=z_y_start + 4*grid_side, 
+            fig.add_shape(type="rect", x0=z_x_start + grid_side_x, x1=z_x_start + 4*grid_side_x, 
+                          y0=z_y_start + grid_side_y, y1=z_y_start + 4*grid_side_y, 
                           line=dict(color="#ff2222", width=10))
 
             fig.update_layout(
-                width=1000, height=700,
-                xaxis=dict(range=[-250, 250], visible=False, fixedrange=True),
-                # scaleratio=1でデータグリッドの正方形を担保
-                yaxis=dict(range=[-40, 500], visible=False, fixedrange=True, scaleanchor="x", scaleratio=1),
+                width=1000, height=700, # 全体枠は長方形
+                xaxis=dict(range=[-350, 350], visible=False, fixedrange=True),
+                yaxis=dict(range=[-40, 500], visible=False, fixedrange=True),
                 margin=dict(l=0, r=0, t=10, b=0),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
             )
