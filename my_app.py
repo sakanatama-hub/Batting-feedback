@@ -8,8 +8,8 @@ import base64
 import requests
 import json
 
-# --- 基本設定 (最新のGitHub情報に修正済み) ---
-PW = "TOYOTABASEBALLCLUB"
+# --- 基本設定 ---
+PW = "1189"
 GITHUB_USER = "sakanatama-hub" 
 GITHUB_REPO = "Batting-feedback" 
 GITHUB_FILE_PATH = "data.csv"
@@ -30,9 +30,10 @@ def get_encoded_bg(path):
             return f"data:image/png;base64,{base64.b64encode(f.read()).decode()}"
     return None
 
-@st.cache_data(ttl=5)
+# キャッシュを無効化して常に最新を取得するように変更
 def load_data_from_github():
-    url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}"
+    # URLにランダムなクエリを付けてキャッシュを防ぐ
+    url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
     try:
         df = pd.read_csv(url)
         if 'DateTime' in df.columns:
@@ -75,6 +76,7 @@ def check_auth():
     return False
 
 if check_auth():
+    # データを読み込む（最新状態）
     db_df = load_data_from_github()
     
     st.sidebar.title("分析メニュー")
@@ -83,8 +85,9 @@ if check_auth():
     if mode == "📊 選手別・日付別分析":
         st.header("📊 選手別・日付別分析")
         
-        if db_df.empty or len(db_df) == 0:
-            st.warning("現在、GitHubにデータがありません。先に登録を行ってください。")
+        # デバッグ用：データが読み込めているか確認
+        if db_df.empty:
+            st.warning("現在、GitHubにデータがありません。「新規データ登録」からアップロードしてください。")
         else:
             target_player = st.sidebar.selectbox("選手を選択", PLAYERS)
             pdf = db_df[db_df['Player Name'] == target_player].copy()
@@ -92,6 +95,7 @@ if check_auth():
             if pdf.empty:
                 st.info(f"{target_player} 選手のデータはまだありません。")
             else:
+                # 日付データの処理
                 pdf['Date_Only'] = pdf['DateTime'].dt.date
                 available_dates = sorted(pdf['Date_Only'].unique(), reverse=True)
                 target_date = st.sidebar.selectbox("日付を選択", available_dates)
@@ -99,10 +103,12 @@ if check_auth():
                 vdf = pdf[pdf['Date_Only'] == target_date].copy()
                 st.subheader(f"📍 {target_player} : {target_date} のデータ")
                 
+                # 数値列の抽出
                 metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
                 target_metric = st.selectbox("分析指標を選択", metrics if metrics else ["データなし"])
                 
                 if not vdf.empty and target_metric != "データなし":
+                    # --- ヒートマップ描画 ---
                     clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
                     
                     def get_grid_pos(x, y):
@@ -124,45 +130,51 @@ if check_auth():
                         grid[r, c] += row[target_metric]; counts[r, c] += 1
                     
                     display_grid = np.where(counts > 0, grid / counts, 0)
-
                     fig = go.Figure(data=go.Heatmap(
                         z=np.flipud(display_grid),
                         x=['極内','内','中','外','極外'], y=['極高','高','中','低','極低'],
                         colorscale='YlOrRd', text=np.flipud(np.round(display_grid, 1)),
                         texttemplate="%{text}", showscale=True
                     ))
-                    
                     bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
                     if bg_img:
                         fig.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.4, layer="below"))
-                    
                     fig.update_layout(width=600, height=600)
                     st.plotly_chart(fig)
+                    st.write("📝 詳細データ")
                     st.dataframe(vdf.drop(columns=['Date_Only']))
 
     elif mode == "📥 新規データ登録":
-        st.header("📥 新規データ登録 (GitHub保存)")
-        target_player = st.selectbox("登録する選手を選択", PLAYERS)
-        uploaded_file = st.file_uploader("CSVファイルをアップロード", type="csv")
+        st.header("📥 新規データ登録")
+        st.info("Excelファイル(.xlsx)またはCSVファイルをアップロードできます。")
         
-        if st.button("GitHubへ保存（コミット）"):
+        target_player = st.selectbox("登録する選手を選択", PLAYERS)
+        uploaded_file = st.file_uploader("ファイルをアップロード", type=["csv", "xlsx"])
+        
+        if st.button("GitHubへ保存"):
             if uploaded_file:
                 try:
-                    new_df = pd.read_csv(uploaded_file)
+                    # ファイル形式に応じて読み込み
+                    if uploaded_file.name.endswith('.xlsx'):
+                        new_df = pd.read_excel(uploaded_file)
+                    else:
+                        new_df = pd.read_csv(uploaded_file)
+                        
                     new_df['Player Name'] = target_player
                     new_df['DateTime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     
+                    # 既存データと統合
                     combined_df = pd.concat([db_df, new_df], ignore_index=True).replace({np.nan: ""})
                     
                     status = save_to_github(combined_df)
                     if status in [200, 201]:
-                        st.success(f"{target_player} 選手のデータをGitHubに保存しました！")
+                        st.success(f"{target_player} 選手のデータを保存しました！")
                         st.balloons()
+                        # 画面をリセットして最新データを読み込ませる
                         st.cache_data.clear()
                     else:
-                        st.error(f"保存失敗。ステータスコード: {status}")
-                        st.info(f"送信先: {GITHUB_USER}/{GITHUB_REPO}")
+                        st.error(f"保存失敗: {status}")
                 except Exception as e:
-                    st.error(f"エラー: {e}")
+                    st.error(f"読み込みエラー: {e}")
             else:
                 st.warning("ファイルを選択してください。")
