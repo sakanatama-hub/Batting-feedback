@@ -60,13 +60,18 @@ else:
 
             fig = go.Figure()
 
-            # --- 背景（超コンパクト版） ---
-            # 芝生
-            fig.add_shape(type="rect", x0=-180, x1=180, y0=-20, y1=320, fillcolor="#1a4314", line_width=0, layer="below")
-            # 土（フェアゾーン）
-            fig.add_shape(type="path", path="M -60 70 L -250 350 L 250 350 L 60 70 Z", fillcolor="#8B4513", line_width=0, layer="below")
+            # --- 背景：芝生（深緑） ---
+            fig.add_shape(type="rect", x0=-200, x1=200, y0=-50, y1=350, fillcolor="#1a4314", line_width=0, layer="below")
+            
+            # --- フェアゾーンの土（茶色）：ラインと完全同期 ---
+            # ラインの座標と完全に一致させることで、はみ出しを防止
+            fig.add_shape(type="path", 
+                          path="M -60 75 L -200 300 L 200 300 L 60 75 Z", 
+                          fillcolor="#8B4513", line_width=0, layer="below")
+            
             # ホームベース周りの土
             fig.add_shape(type="circle", x0=-40, x1=40, y0=-10, y1=70, fillcolor="#8B4513", line_width=0, layer="below")
+            
             # ホームベース
             fig.add_shape(type="path", path="M -12 35 L 12 35 L 12 25 L 0 5 L -12 25 Z", fillcolor="white", line=dict(color="#444", width=2), layer="below")
             
@@ -74,14 +79,15 @@ else:
             box_style = dict(fillcolor="#1a4314", line=dict(color="rgba(255,255,255,0.8)", width=3), layer="below")
             fig.add_shape(type="path", path="M -65 10 L -30 10 L -25 75 L -60 75 Z", **box_style)
             fig.add_shape(type="path", path="M 65 10 L 30 10 L 25 75 L 60 75 Z", **box_style)
-            # ライン
+
+            # ファウルライン（土と芝生の境界線）
             fig.add_shape(type="line", x0=-60, y0=75, x1=-200, y1=300, line=dict(color="white", width=4), layer="below")
             fig.add_shape(type="line", x0=60, y0=75, x1=200, y1=300, line=dict(color="white", width=4), layer="below")
 
-            # --- 特大データグリッド（サイズ維持で主役化） ---
-            side = 32 
+            # --- 25分割グリッド：各マスを厳密に正方形に固定 ---
+            side = 30 
             z_x_start = -(side * 2.5)
-            z_y_start = 100 # 下に寄せて画面内に収める
+            z_y_start = 120 
             
             if target_metric != "データなし":
                 def get_grid_pos(x, y):
@@ -107,17 +113,18 @@ else:
                                       fillcolor=color, line=dict(color="#222", width=1.5))
                         if val > 0:
                             fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=str(round(val,1)),
-                                               showarrow=False, font=dict(size=22, color="white", weight="bold"))
+                                               showarrow=False, font=dict(size=20, color="white", weight="bold"))
 
-            # 赤枠
+            # 真ん中9マスの赤枠
             fig.add_shape(type="rect", x0=z_x_start + side, x1=z_x_start + 4*side, 
                           y0=z_y_start + side, y1=z_y_start + 4*side, 
                           line=dict(color="#ff2222", width=8))
 
             fig.update_layout(
-                width=1000, height=650, # 高さを抑えてPC画面に最適化
+                width=1000, height=600,
                 xaxis=dict(range=[-150, 150], visible=False, fixedrange=True),
-                yaxis=dict(range=[-20, 320], visible=False, fixedrange=True),
+                # yaxisのscaleanchorを'x'に設定することで、マスの縦横比を1:1に固定
+                yaxis=dict(range=[-10, 310], visible=False, fixedrange=True, scaleanchor="x", scaleratio=1),
                 margin=dict(l=0, r=0, t=10, b=0),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
             )
