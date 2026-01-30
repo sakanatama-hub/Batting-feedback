@@ -61,32 +61,33 @@ else:
         # --- 図の作成 ---
         fig = go.Figure()
 
-        # 1. フィールド背景（芝生と土のパース）
-        fig.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=250, fillcolor="#556b2f", line_width=0, layer="below")
-        fig.add_shape(type="path", path="M -130 -10 L 130 -10 L 80 220 L -80 220 Z", fillcolor="#bc8f8f", line_width=0, layer="below")
+        # 1. 地面：すべて緑（芝生イメージ）
+        fig.add_shape(type="rect", x0=-200, x1=200, y0=-50, y1=250, fillcolor="#2E8B57", line_width=0, layer="below")
         
-        # 2. ファウルライン（ホームベース付近からV字に広がる白線）
-        line_style = dict(color="white", width=3)
-        fig.add_shape(type="line", x0=-12, y0=15, x1=-150, y1=200, line=line_style, layer="below") # 1塁線方向
-        fig.add_shape(type="line", x0=12, y0=15, x1=150, y1=200, line=line_style, layer="below")  # 3塁線方向
+        # 2. ホームベース：尖った方を画面の下に向ける
+        # 頂点が (0, 10)、上の辺が (y=40)
+        fig.add_shape(type="path", path="M -12 40 L 12 40 L 12 25 L 0 10 L -12 25 Z", 
+                      fillcolor="white", line=dict(color="#444", width=2), layer="below")
         
-        # 3. 捕手視点のホームベース（上が尖る投手側）
-        # 平らな辺を手前(y=15)、尖った頂点を奥(y=45)に配置
-        fig.add_shape(type="path", path="M -12 15 L 12 15 L 12 30 L 0 45 L -12 30 Z", fillcolor="white", line=dict(color="#444", width=2), layer="below")
+        # 3. ファウルライン（ホームベースの角から斜め上に広がる）
+        line_style = dict(color="white", width=4)
+        fig.add_shape(type="line", x0=-12, y0=25, x1=-180, y1=220, line=line_style, layer="below")
+        fig.add_shape(type="line", x0=12, y0=25, x1=180, y1=220, line=line_style, layer="below")
         
-        # 4. バッターボックス（奥行きに合わせた斜めライン）
-        box_line = dict(color="rgba(255,255,255,0.7)", width=3)
-        fig.add_shape(type="path", path="M -50 10 L -25 10 L -20 65 L -45 65 Z", line=box_line, layer="below")
-        fig.add_shape(type="path", path="M 50 10 L 25 10 L 20 65 L 45 65 Z", line=box_line, layer="below")
+        # 4. バッターボックス
+        box_line = dict(color="rgba(255,255,255,0.8)", width=3)
+        fig.add_shape(type="rect", x0=-45, x1=-18, y0=15, y1=65, line=box_line, layer="below")
+        fig.add_shape(type="rect", x0=18, x1=45, y0=15, y1=65, line=box_line, layer="below")
 
         # 5. 立体的なコース別グリッド（上が狭い台形）
         if target_metric != "データなし":
+            grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
+            # グリッド計算ロジック
             def get_grid_pos(x, y):
                 r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
                 c = 0 if x < -28.8 else 1 if x < -9.6 else 2 if x <= 9.6 else 3 if x <= 28.8 else 4
                 return r, c
 
-            grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
             for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
                 r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
                 grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
@@ -102,12 +103,12 @@ else:
                     xh1 = - (w * p_h) / 2 + c * step_h; xh2 = xh1 + step_h
                     
                     val = display_grid[r, c]
-                    color = f"rgba(255, {max(0, 255-int(val*2.2))}, 0, 0.85)" if val > 0 else "rgba(200,200,200,0.1)"
+                    color = f"rgba(255, {max(0, 255-int(val*2.2))}, 0, 0.85)" if val > 0 else "rgba(255,255,255,0.1)"
                     
                     fig.add_shape(type="path", path=f"M {xl1} {y_l} L {xl2} {y_l} L {xh2} {y_h} L {xh1} {y_h} Z",
-                                  fillcolor=color, line=dict(color="black", width=1))
+                                  fillcolor=color, line=dict(color="#333", width=1))
                     if val > 0:
-                        fig.add_annotation(x=(xl1+xl2+xh1+xh2)/4, y=(y_l+y_high)/2 if 'y_high' in locals() else (y_l+y_h)/2,
+                        fig.add_annotation(x=(xl1+xl2+xh1+xh2)/4, y=(y_l+y_h)/2,
                                            text=str(round(val,1)), showarrow=False, 
                                            font=dict(size=14, color="white", weight="bold"))
 
