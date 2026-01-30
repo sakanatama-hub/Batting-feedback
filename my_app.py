@@ -9,7 +9,7 @@ import requests
 import json
 
 # --- 基本設定 ---
-PW = "1189"
+PW = "TOYOTABASEBALLCLUB"
 GITHUB_USER = "sakanatama-hub" 
 GITHUB_REPO = "Batting-feedback" 
 GITHUB_FILE_PATH = "data.csv"
@@ -67,9 +67,9 @@ def check_auth():
 
 if check_auth():
     db_df = load_data_from_github()
-    mode = st.sidebar.radio("機能切替", ["📊 データ分析", "📥 新規データ登録"])
+    mode = st.sidebar.radio("機能切替", ["📊 選手分析", "📥 新規登録"])
 
-    if mode == "📊 データ分析":
+    if mode == "📊 選手分析":
         st.header("📊 選手別・日付別分析")
         if db_df.empty:
             st.warning("データがありません。")
@@ -83,22 +83,24 @@ if check_auth():
                 target_date = st.sidebar.selectbox("日付を選択", sorted(pdf['Date_Only'].unique(), reverse=True))
                 vdf = pdf[pdf['Date_Only'] == target_date].copy()
                 
-                # 指標選択
-                metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c and "Location" not in c]
+                # 指標選択（ExitVelocity, LaunchAngleなど）
+                metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
                 target_metric = st.selectbox("分析指標を選択", metrics if metrics else ["データなし"])
 
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.subheader("🎯 コース別")
+                    st.subheader("🎯 コース別平均（ヒートマップ）")
                     if target_metric != "データなし":
                         clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
                         def get_grid_pos(x, y):
+                            # 高低
                             if y > 110: r = 0
                             elif 88.2 < y <= 110: r = 1
                             elif 66.6 < y <= 88.2: r = 2
                             elif 45 <= y <= 66.6: r = 3
                             else: r = 4
+                            # 左右
                             if x < -28.8: c = 0
                             elif -28.8 <= x < -9.6: c = 1
                             elif -9.6 <= x <= 9.6: c = 2
@@ -111,7 +113,8 @@ if check_auth():
                             r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
                             grid[r, c] += row[target_metric]; counts[r, c] += 1
                         display_grid = np.where(counts > 0, grid / counts, 0)
-                        fig_h = go.Figure(data=go.Heatmap(z=np.flipud(display_grid), x=['極内','内','中','外','極外'], y=['極高','高','中','低','極低'], colorscale='YlOrRd', text=np.flipud(np.round(display_grid, 1)), texttemplate="%{text}"))
+                        
+                        fig_h = go.Figure(data=go.Heatmap(z=np.flipud(display_grid), x=['極内','内','中','外','極外'], y=['極低','低','中','高','極高'], colorscale='YlOrRd', text=np.flipud(np.round(display_grid, 1)), texttemplate="%{text}"))
                         bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
                         if bg_img:
                             fig_h.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.5, layer="below"))
@@ -119,27 +122,45 @@ if check_auth():
                         st.plotly_chart(fig_h)
 
                 with col2:
-                    st.subheader("🚀 打球方向")
-                    if 'Hit_Location_X' in vdf.columns:
-                        fig_s = go.Figure(data=go.Scatter(x=vdf['Hit_Location_X'], y=vdf['Hit_Location_Y'], mode='markers', marker=dict(size=12, color='blue')))
-                        fig_s.update_layout(width=450, height=450, xaxis=dict(range=[-200, 200]), yaxis=dict(range=[0, 400]))
+                    st.subheader("📍 打球位置（散布図）")
+                    # ExcelのStrikeZoneX, Yをそのまま散布図としてプロット
+                    if 'StrikeZoneX' in vdf.columns and 'StrikeZoneY' in vdf.columns:
+                        fig_s = go.Figure(data=go.Scatter(
+                            x=vdf['StrikeZoneX'], 
+                            y=vdf['StrikeZoneY'], 
+                            mode='markers', 
+                            marker=dict(size=12, color='blue', line=dict(width=1, color='DarkSlateGrey')),
+                            text=vdf[target_metric] if target_metric != "データなし" else ""
+                        ))
+                        # 捕手目線背景を散布図にも追加
+                        if bg_img:
+                            fig_s.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-50, y=150, sizex=100, sizey=150, sizing="stretch", opacity=0.3, layer="below"))
+                        
+                        fig_s.update_layout(width=450, height=450, xaxis=dict(range=[-50, 50]), yaxis=dict(range=[0, 150]))
                         st.plotly_chart(fig_s)
                 
+                st.write("📝 生データ確認")
                 st.dataframe(vdf)
 
-    elif mode == "📥 新規データ登録":
-        st.header("📥 新規データ登録")
+    elif mode == "📥 新規登録":
+        st.header("📥 練習データ登録")
         target_player = st.selectbox("選手を選択", PLAYERS)
-        # ここが日付指定
-        target_date = st.date_input("登録する日付", datetime.date.today())
-        uploaded_file = st.file_uploader("アップロード", type=["csv", "xlsx"])
+        # 日付指定カレンダー
+        target_date = st.date_input("登録日を選択", datetime.date.today())
+        uploaded_file = st.file_uploader("ExcelまたはCSVをアップロード", type=["csv", "xlsx"])
         
         if st.button("GitHubへ保存"):
             if uploaded_file:
-                df_up = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
-                df_up['Player Name'] = target_player
-                df_up['DateTime'] = datetime.datetime.combine(target_date, datetime.datetime.now().time())
-                new_db = pd.concat([db_df, df_up], ignore_index=True).replace({np.nan: ""})
-                if save_to_github(new_db) in [200, 201]:
-                    st.success("保存完了！")
-                    st.balloons()
+                try:
+                    df_up = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
+                    df_up['Player Name'] = target_player
+                    # 指定した日付をDateTime列にセット
+                    df_up['DateTime'] = datetime.datetime.combine(target_date, datetime.datetime.now().time())
+                    
+                    new_db = pd.concat([db_df, df_up], ignore_index=True).replace({np.nan: ""})
+                    if save_to_github(new_db) in [200, 201]:
+                        st.success(f"{target_date} のデータを正常に保存しました！")
+                        st.balloons()
+                        st.cache_data.clear()
+                    else: st.error("保存失敗")
+                except Exception as e: st.error(f"エラー: {e}")
