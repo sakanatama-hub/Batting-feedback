@@ -46,8 +46,8 @@ else:
     db_df = load_data_from_github()
     st.title("🔵 選手別・コース別分析")
 
-    # 中央配置のためのカラム設定
-    _, center_col, _ = st.columns([1, 6, 1])
+    # 完全な中央配置のためのダミーカラム
+    _, center_col, _ = st.columns([1, 4, 1])
 
     with center_col:
         c1, c2 = st.columns(2)
@@ -66,27 +66,29 @@ else:
             fig = go.Figure()
 
             # 1. 地面：深緑の芝生
-            fig.add_shape(type="rect", x0=-200, x1=200, y0=-50, y1=250, fillcolor="#1a4314", line_width=0, layer="below")
+            fig.add_shape(type="rect", x0=-150, x1=150, y0=-20, y1=250, fillcolor="#1a4314", line_width=0, layer="below")
             
-            # 2. ホームベース：尖った方が下（投手視点）
-            # 頂点(0,10), 斜めの角(-12,25)と(12,25), 上の角(-12,40)と(12,40)
+            # 2. ホームベース：投手視点（尖った方が下）
             fig.add_shape(type="path", path="M -12 40 L 12 40 L 12 25 L 0 10 L -12 25 Z", 
                           fillcolor="white", line=dict(color="#444", width=2), layer="below")
             
-            # 3. バッターボックス
+            # 3. バッターボックス（左右対称）
             box_line = dict(color="rgba(255,255,255,0.6)", width=3)
-            fig.add_shape(type="rect", x0=-48, x1=-18, y0=15, y1=70, line=box_line, layer="below")
-            fig.add_shape(type="rect", x0=18, x1=48, y0=15, y1=70, line=box_line, layer="below")
+            fig.add_shape(type="rect", x0=-50, x1=-18, y0=15, y1=75, line=box_line, layer="below")
+            fig.add_shape(type="rect", x0=18, x1=50, y0=15, y1=75, line=box_line, layer="below")
 
-            # 4. ファウルライン（ベースの斜め辺を延長）
-            # 頂点(0,10)から角(±12,25)を通るラインを描画
+            # 4. ファウルライン（ベースの延長線）
             line_style = dict(color="white", width=4)
-            # 延長線上、ボックスの外に出る点から描画開始
-            fig.add_shape(type="line", x0=-48, y0=70, x1=-160, y1=210, line=line_style, layer="below")
-            fig.add_shape(type="line", x0=48, y0=70, x1=160, y1=210, line=line_style, layer="below")
+            fig.add_shape(type="line", x0=-52, y0=75, x1=-160, y1=210, line=line_style, layer="below")
+            fig.add_shape(type="line", x0=52, y0=75, x1=160, y1=210, line=line_style, layer="below")
 
-            # 5. 立体的なコース別グリッド
+            # 5. 赤枠とグリッドの完全同期描画
+            # 基準となる台形の四隅 (下左, 下右, 上右, 上左)
+            trap_x = [-38, 38, 33, -33] 
+            trap_y = [100, 100, 150, 150]
+
             if target_metric != "データなし":
+                # グリッド計算
                 def get_grid_pos(x, y):
                     r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
                     c = 0 if x < -28.8 else 1 if x < -9.6 else 2 if x <= 9.6 else 3 if x <= 28.8 else 4
@@ -98,14 +100,23 @@ else:
                     grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
                 display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
 
+                # グリッド描画（赤枠の範囲を5等分して台形を作る）
                 for r in range(5):
                     for c in range(5):
-                        y_l = 85 + (4-r)*16; y_h = y_l + 15
-                        p_l = 1 - (y_l * 0.001); p_h = 1 - (y_h * 0.001)
-                        w = 65
-                        step_l = (w * p_l) / 2.5; step_h = (w * p_h) / 2.5
-                        xl1 = - (w * p_l) / 2 + c * step_l; xl2 = xl1 + step_l
-                        xh1 = - (w * p_h) / 2 + c * step_h; xh2 = xh1 + step_h
+                        # yの比率計算
+                        y_low_pct = (4 - r) / 5; y_high_pct = (5 - r) / 5
+                        y_l = trap_y[0] + (trap_y[2] - trap_y[0]) * y_low_pct
+                        y_h = trap_y[0] + (trap_y[2] - trap_y[0]) * y_high_pct
+                        
+                        # そのy座標におけるxの幅を線形補間
+                        xl_start = trap_x[0] + (trap_x[3] - trap_x[0]) * y_low_pct
+                        xl_end = trap_x[1] + (trap_x[2] - trap_x[1]) * y_low_pct
+                        xh_start = trap_x[0] + (trap_x[3] - trap_x[0]) * y_high_pct
+                        xh_end = trap_x[1] + (trap_x[2] - trap_x[1]) * y_high_pct
+                        
+                        # x方向の5分割
+                        xl1 = xl_start + (xl_end - xl_start) * (c / 5); xl2 = xl_start + (xl_end - xl_start) * ((c+1) / 5)
+                        xh1 = xh_start + (xh_end - xh_start) * (c / 5); xh2 = xh_start + (xh_end - xh_start) * ((c+1) / 5)
                         
                         val = display_grid[r, c]
                         color = f"rgba(255, {max(0, 255-int(val*2.2))}, 0, 0.85)" if val > 0 else "rgba(255,255,255,0.05)"
@@ -117,14 +128,15 @@ else:
                                                text=str(round(val,1)), showarrow=False, 
                                                font=dict(size=14, color="white", weight="bold"))
 
-            # 6. ストライクゾーンの赤枠（パース付き）
-            fig.add_shape(type="path", path="M -38 100 L 38 100 L 34 148 L -34 148 Z", line=dict(color="#ff2222", width=6))
+            # 6. ストライクゾーンの赤枠（グリッドの基準点と完全に一致させる）
+            fig.add_shape(type="path", 
+                          path=f"M {trap_x[0]} {trap_y[0]} L {trap_x[1]} {trap_y[1]} L {trap_x[2]} {trap_y[2]} L {trap_x[3]} {trap_y[3]} Z", 
+                          line=dict(color="#ff2222", width=6))
 
             fig.update_layout(
-                autosize=True,
-                width=800, height=800,
-                xaxis=dict(range=[-110, 110], visible=False),
-                yaxis=dict(range=[-10, 220], visible=False),
+                width=700, height=700,
+                xaxis=dict(range=[-100, 100], visible=False, fixedrange=True),
+                yaxis=dict(range=[-10, 220], visible=False, fixedrange=True),
                 margin=dict(l=0, r=0, t=0, b=0),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
             )
