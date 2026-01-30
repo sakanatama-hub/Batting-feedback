@@ -60,30 +60,34 @@ else:
 
             fig = go.Figure()
 
-            # 1. ベースの芝生：深緑
+            # 1. 全体の芝生：深緑
             fig.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=250, fillcolor="#1a4314", line_width=0, layer="below")
             
-            # 2. フェアゾーン：茶色の土 (#8B4513)
-            # ラインの座標（x0=±48, y0=80 から x1=±180, y1=240）と完全に一致させる
+            # 2. フェアゾーンの土：バッターボックスの前方から展開
+            # y=80（ボックスの上端）付近から広がるように調整
             fig.add_shape(type="path", 
-                          path="M 0 10 L -48 80 L -180 240 L 180 240 L 48 80 Z", 
+                          path="M -50 80 L -180 240 L 180 240 L 50 80 Z", 
                           fillcolor="#8B4513", line_width=0, layer="below")
             
-            # 3. ホームベース
+            # 3. ホームベース周りの土（円形イメージ）
+            fig.add_shape(type="circle", x0=-25, x1=25, y0=0, y1=50, fillcolor="#8B4513", line_width=0, layer="below")
+
+            # 4. ホームベース
             fig.add_shape(type="path", path="M -12 40 L 12 40 L 12 28 L 0 10 L -12 28 Z", 
                           fillcolor="white", line=dict(color="#444", width=2), layer="below")
             
-            # 4. バッターボックス
-            box_line = dict(color="rgba(255,255,255,0.7)", width=3)
-            fig.add_shape(type="path", path="M -55 10 L -22 10 L -18 80 L -48 80 Z", line=box_line, layer="below")
-            fig.add_shape(type="path", path="M 55 10 L 22 10 L 18 80 L 50 80 Z", line=box_line, layer="below")
+            # 5. バッターボックス（中を緑に保つために土レイヤーの上に配置）
+            box_line = dict(color="rgba(255,255,255,0.8)", width=3)
+            # ボックス背景（緑）を上書き
+            fig.add_shape(type="path", path="M -55 10 L -22 10 L -18 80 L -48 80 Z", fillcolor="#1a4314", line=box_line, layer="below")
+            fig.add_shape(type="path", path="M 55 10 L 22 10 L 18 80 L 50 80 Z", fillcolor="#1a4314", line=box_line, layer="below")
 
-            # 5. ファウルライン（土と芝生の境界線）
+            # 6. ファウルライン
             line_style = dict(color="white", width=4)
             fig.add_shape(type="line", x0=-48, y0=80, x1=-180, y1=240, line=line_style, layer="below")
             fig.add_shape(type="line", x0=48, y0=80, x1=180, y1=240, line=line_style, layer="below")
 
-            # 6. グリッド：25分割（正方形）
+            # 7. グリッド：25分割（正方形）
             z_x = [-45, 45]; z_y = [110, 200] 
             w_u = 18; h_u = 18
 
@@ -112,7 +116,7 @@ else:
                             fig.add_annotation(x=(xs+xe)/2, y=(ys+ye)/2, text=str(round(val,1)),
                                                showarrow=False, font=dict(size=16, color="white", weight="bold"))
 
-            # 7. 真ん中9マスの赤枠
+            # 8. 真ん中9マスの赤枠
             fig.add_shape(type="rect", 
                           x0=z_x[0] + w_u, x1=z_x[0] + 4*w_u, 
                           y0=z_y[1] - 4*h_u, y1=z_y[1] - h_u, 
