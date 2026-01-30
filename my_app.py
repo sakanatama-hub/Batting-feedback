@@ -3,9 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import datetime
-import base64
-import requests
-import json
 
 # --- 基本設定 ---
 PW = "TOYOTABASEBALLCLUB"
@@ -46,8 +43,8 @@ else:
     db_df = load_data_from_github()
     st.title("🔵 選手別・コース別分析")
 
-    # 中央配置
-    _, center_col, _ = st.columns([1, 6, 1])
+    # 図を大きく見せるためにカラム幅を調整
+    _, center_col, _ = st.columns([0.2, 8, 0.2])
 
     with center_col:
         c1, c2 = st.columns(2)
@@ -64,12 +61,12 @@ else:
 
             fig = go.Figure()
 
-            # 1. 地面：落ち着いた深緑
-            fig.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=250, fillcolor="#1a4314", line_width=0, layer="below")
+            # 1. 地面：深緑
+            fig.add_shape(type="rect", x0=-200, x1=200, y0=-50, y1=250, fillcolor="#1a4314", line_width=0, layer="below")
             
-            # 2. ホームベース：【画角修正】尖った方を長く、奥の辺を短く
-            # 頂点を手前(0, 5)に引き伸ばし、奥の辺(y=45)を狭く設定
-            fig.add_shape(type="path", path="M -10 45 L 10 45 L 12 35 L 0 5 L -12 35 Z", 
+            # 2. ホームベース：【自然なパース】
+            # 投手側から見て違和感のない比率に調整（尖った部分はy=10から開始）
+            fig.add_shape(type="path", path="M -12 40 L 12 40 L 12 28 L 0 10 L -12 28 Z", 
                           fillcolor="white", line=dict(color="#444", width=2), layer="below")
             
             # 3. バッターボックス：パース付き
@@ -82,16 +79,14 @@ else:
             fig.add_shape(type="line", x0=-48, y0=80, x1=-150, y1=240, line=line_style, layer="below")
             fig.add_shape(type="line", x0=48, y0=80, x1=150, y1=240, line=line_style, layer="below")
 
-            # 5. グリッド：25分割（正方形を維持）
-            # 表示位置を少し上(y=100以上)に移動
-            zone_size = 90  # 正方形を保つためのサイズ
-            zone_full_x = [-45, 45]
-            zone_full_y = [110, 200] # 上の方に配置
-            w_u = (zone_full_x[1] - zone_full_x[0]) / 5
-            h_u = (zone_full_y[1] - zone_full_y[0]) / 5
+            # 5. グリッド：25分割【各マスを正方形に固定】
+            # x範囲90、y範囲90で設定することで、各マスが18x18の正方形になる
+            z_x = [-45, 45]
+            z_y = [105, 195] 
+            w_u = 18 # (45 - (-45)) / 5
+            h_u = 18 # (195 - 105) / 5
 
             if target_metric != "データなし":
-                # データ集計ロジック
                 def get_grid_pos(x, y):
                     r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
                     c = 0 if x < -28.8 else 1 if x < -9.6 else 2 if x <= 9.6 else 3 if x <= 28.8 else 4
@@ -103,33 +98,32 @@ else:
                     grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
                 display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
 
-                # 色定義の復元 (YlOrRd)
                 for r in range(5):
                     for c in range(5):
-                        xs = zone_full_x[0] + c * w_u; xe = xs + w_u
-                        ys = zone_full_y[1] - (r + 1) * h_u; ye = ys + h_u
+                        xs = z_x[0] + c * w_u; xe = xs + w_u
+                        ys = z_y[1] - (r + 1) * h_u; ye = ys + h_u
                         
                         val = display_grid[r, c]
-                        # クリーンなUIのための配色設定
                         color = f"rgba(255, {max(0, 255-int(val*2.2))}, 0, 0.85)" if val > 0 else "rgba(255,255,255,0.08)"
                         
                         fig.add_shape(type="rect", x0=xs, x1=xe, y0=ys, y1=ye, 
                                       fillcolor=color, line=dict(color="#333", width=1))
                         if val > 0:
                             fig.add_annotation(x=(xs+xe)/2, y=(ys+ye)/2, text=str(round(val,1)),
-                                               showarrow=False, font=dict(size=14, color="white", weight="bold"))
+                                               showarrow=False, font=dict(size=16, color="white", weight="bold"))
 
-            # 6. 真ん中の9マスに赤枠をフィット
+            # 6. 真ん中の9マスに赤枠（3w_u x 3h_u の範囲）
             fig.add_shape(type="rect", 
-                          x0=zone_full_x[0] + w_u, x1=zone_full_x[0] + 4*w_u, 
-                          y0=zone_full_y[1] - 4*h_u, y1=zone_full_y[1] - h_u, 
+                          x0=z_x[0] + w_u, x1=z_x[0] + 4*w_u, 
+                          y0=z_y[1] - 4*h_u, y1=z_y[1] - h_u, 
                           line=dict(color="#ff2222", width=6))
 
+            # 図を大きく、かつアスペクト比を1:1に近づける
             fig.update_layout(
-                width=800, height=800,
-                xaxis=dict(range=[-120, 120], visible=False, fixedrange=True),
-                yaxis=dict(range=[-10, 250], visible=False, fixedrange=True),
-                margin=dict(l=0, r=0, t=20, b=0),
+                width=1000, height=800,
+                xaxis=dict(range=[-110, 110], visible=False, fixedrange=True),
+                yaxis=dict(range=[-10, 210], visible=False, fixedrange=True),
+                margin=dict(l=0, r=0, t=30, b=0),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
             )
             
