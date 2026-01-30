@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import os
 import datetime
 import base64
 import requests
@@ -21,14 +20,6 @@ PLAYERS = [
     "#22 高祖 健輔", "#23 箱山 遥人", "#24 坂巻 尚哉", "#26 西村 彰浩", "#27 小畑 尋規",
     "#28 宮崎 仁斗", "#29 徳本 健太朗", "#39 柳 元珍", "#99 尾瀬 雄大"
 ]
-
-LOCAL_IMAGE_PATH = "捕手目線.png"
-
-def get_encoded_bg(path):
-    if os.path.exists(path):
-        with open(path, "rb") as f:
-            return f"data:image/png;base64,{base64.b64encode(f.read()).decode()}"
-    return None
 
 def load_data_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
@@ -52,6 +43,28 @@ def save_to_github(df):
     res = requests.put(url, headers=headers, data=json.dumps(data))
     return res.status_code
 
+def add_field_graphics(fig, zoom=False):
+    """
+    イラストのような野球の背景グラフィック（マウンド、ホームベース、ライン）を
+    Plotlyの図形として追加する関数
+    """
+    # 背景の芝生（緑）
+    fig.add_shape(type="rect", x0=-100, x1=100, y0=0, y1=200, fillcolor="seagreen", layer="below", line_width=0)
+    
+    # 土の部分（扇形）
+    fig.add_shape(type="path", path="M -80 180 Q 0 250 80 180 L 0 0 Z", fillcolor="peru", layer="below", line_width=0)
+
+    # ホームベース（白）
+    fig.add_shape(type="path", path="M -8.5 5 L 8.5 5 L 8.5 12 L 0 20 L -8.5 12 Z", fillcolor="white", layer="below", line_width=1)
+    
+    # バッターボックスのライン
+    fig.add_shape(type="rect", x0=-25, x1=-12, y0=2, y1=18, line=dict(color="white", width=2), layer="below")
+    fig.add_shape(type="rect", x0=12, x1=25, y0=2, y1=18, line=dict(color="white", width=2), layer="below")
+
+    if not zoom:
+        # マウンド
+        fig.add_shape(type="circle", x0=-15, x1=15, y0=145, y1=175, fillcolor="peru", line_color="white", layer="below")
+
 def check_auth():
     if "ok" not in st.session_state: st.session_state["ok"] = False
     if st.session_state["ok"]: return True
@@ -70,7 +83,7 @@ if check_auth():
     mode = st.sidebar.radio("機能切替", ["📊 選手分析", "📥 新規登録"])
 
     if mode == "📊 選手分析":
-        st.header("📊 選手別・日付別分析")
+        st.header("📊 選手分析ダッシュボード")
         if db_df.empty:
             st.warning("データがありません。")
         else:
@@ -84,10 +97,8 @@ if check_auth():
                 metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
                 target_metric = st.selectbox("分析指標を選択", metrics if metrics else ["データなし"])
 
-                bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
-
-                # --- 1. コース別平均 (縦並び・前面にヒートマップ) ---
-                st.subheader("🎯 コース別平均分析")
+                # --- 1. コース別平均 (前面ヒートマップ) ---
+                st.subheader("🎯 コース別平均 (Zone Analysis)")
                 if target_metric != "データなし":
                     clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
                     def get_grid_pos(x, y):
@@ -110,52 +121,43 @@ if check_auth():
                     display_grid = np.where(counts > 0, grid / counts, 0)
                     
                     fig_h = go.Figure()
-                    # 前面にヒートマップを追加 (座標をStrikeZoneの実寸に合わせる)
+                    # フィールドの描画
+                    add_field_graphics(fig_h)
+                    # ヒートマップ
                     fig_h.add_trace(go.Heatmap(
                         z=np.flipud(display_grid),
-                        x=[-38.4, -19.2, 0, 19.2, 38.4], # グリッドの中心点
-                        y=[34.2, 55.8, 77.4, 99.1, 120.7],
-                        colorscale='YlOrRd',
-                        opacity=0.7,
-                        text=np.flipud(np.round(display_grid, 1)),
-                        texttemplate="%{text}",
-                        showscale=False
+                        x=[-38, -19, 0, 19, 38], y=[35, 55, 75, 95, 115],
+                        colorscale='YlOrRd', opacity=0.8,
+                        text=np.flipud(np.round(display_grid, 1)), texttemplate="%{text}", showscale=True
                     ))
+                    # ストライクゾーン強調
+                    fig_h.add_shape(type="rect", x0=-28.8, x1=28.8, y0=45, y1=110, line=dict(color="red", width=4))
                     
-                    # 背面に写真を大きく配置
-                    if bg_img:
-                        fig_h.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-100, y=200, sizex=200, sizey=250, sizing="stretch", opacity=1.0, layer="below"))
-                    
-                    # ストライクゾーンの赤枠 (前面)
-                    fig_h.add_shape(type="rect", x0=-28.8, x1=28.8, y0=45, y1=110, line=dict(color="Red", width=4))
-                    
-                    fig_h.update_layout(width=700, height=700, xaxis=dict(range=[-80, 80], visible=False), yaxis=dict(range=[0, 180], visible=False))
+                    fig_h.update_layout(width=700, height=600, xaxis=dict(range=[-100, 100], visible=False), yaxis=dict(range=[0, 180], visible=False))
                     st.plotly_chart(fig_h)
 
-                # --- 2. 打点プロット (縦並び・ズーム) ---
-                st.subheader("📍 打点詳細プロット")
+                # --- 2. 打点プロット (ズームアップ) ---
+                st.subheader("📍 打球詳細プロット (Point View)")
                 if 'StrikeZoneX' in vdf.columns:
                     fig_s = go.Figure()
+                    add_field_graphics(fig_s, zoom=True)
                     fig_s.add_trace(go.Scatter(
                         x=vdf['StrikeZoneX'], y=vdf['StrikeZoneY'],
-                        mode='markers', marker=dict(size=14, color='yellow', line=dict(width=1, color='black'))
+                        mode='markers', marker=dict(size=14, color='yellow', line=dict(width=1, color='black'), symbol='circle')
                     ))
+                    # 赤枠
+                    fig_s.add_shape(type="rect", x0=-22, x1=22, y0=45, y1=110, line=dict(color="red", width=5))
                     
-                    if bg_img:
-                        fig_s.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-60, y=160, sizex=120, sizey=160, sizing="stretch", opacity=1.0, layer="below"))
-                    
-                    fig_s.add_shape(type="rect", x0=-22, x1=22, y0=45, y1=110, line=dict(color="Red", width=5))
-                    
-                    fig_s.update_layout(width=700, height=700, xaxis=dict(range=[-50, 50], visible=False), yaxis=dict(range=[20, 140], visible=False))
+                    fig_s.update_layout(width=700, height=600, xaxis=dict(range=[-60, 60], visible=False), yaxis=dict(range=[0, 140], visible=False))
                     st.plotly_chart(fig_s)
                 
                 st.dataframe(vdf)
 
     elif mode == "📥 新規登録":
-        st.header("📥 練習データ登録")
+        st.header("📥 データ登録")
         target_player = st.selectbox("選手を選択", PLAYERS)
-        target_date = st.date_input("登録日を選択", datetime.date.today())
-        uploaded_file = st.file_uploader("ExcelまたはCSVをアップロード", type=["csv", "xlsx"])
+        target_date = st.date_input("日付", datetime.date.today())
+        uploaded_file = st.file_uploader("ファイルをアップロード", type=["csv", "xlsx"])
         
         if st.button("GitHubへ保存"):
             if uploaded_file:
@@ -165,6 +167,6 @@ if check_auth():
                     df_up['DateTime'] = datetime.datetime.combine(target_date, datetime.datetime.now().time())
                     new_db = pd.concat([db_df, df_up], ignore_index=True).replace({np.nan: ""})
                     save_to_github(new_db)
-                    st.success("保存完了！")
+                    st.success("GitHubに保存しました。")
                     st.cache_data.clear()
                 except Exception as e: st.error(f"エラー: {e}")
