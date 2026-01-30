@@ -21,6 +21,7 @@ PLAYERS = [
     "#28 宮崎 仁斗", "#29 徳本 健太朗", "#39 柳 元珍", "#99 尾瀬 雄大"
 ]
 
+# --- GitHubデータ関数 ---
 def load_data_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
     try:
@@ -31,35 +32,27 @@ def load_data_from_github():
     except:
         return pd.DataFrame()
 
-def save_to_github(df):
-    url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    res = requests.get(url, headers=headers)
-    sha = res.json().get("sha") if res.status_code == 200 else None
-    csv_content = df.to_csv(index=False)
-    encoded_content = base64.b64encode(csv_content.encode()).decode()
-    data = {"message": f"Update: {datetime.datetime.now()}", "content": encoded_content}
-    if sha: data["sha"] = sha
-    res = requests.put(url, headers=headers, data=json.dumps(data))
-    return res.status_code
-
-def draw_stadium_graphic(fig):
-    """イラストの背景を再現：明るい芝生と捕手視点のホームベース"""
-    # 芝生と土
-    fig.add_shape(type="rect", x0=-100, x1=100, y0=0, y1=150, fillcolor="#7db343", line_width=0, layer="below")
+# --- グラフィック描画（捕手視点・イラスト再現） ---
+def draw_stadium_background(fig):
+    # 明るい芝生
+    fig.add_shape(type="rect", x0=-100, x1=100, y0=0, y1=160, fillcolor="#7db343", line_width=0, layer="below")
+    # 土のサークル
     fig.add_shape(type="circle", x0=-80, x1=80, y0=-40, y1=100, fillcolor="#c89666", line_width=0, layer="below")
     # 捕手視点のホームベース（上が尖る）
-    fig.add_shape(type="path", path="M -10 15 L 10 15 L 10 30 L 0 45 L -10 30 Z", fillcolor="white", line_width=2, layer="below")
+    fig.add_shape(type="path", path="M -12 15 L 12 15 L 12 32 L 0 48 L -12 32 Z", fillcolor="white", line=dict(color="#888", width=2), layer="below")
     # バッターボックス
-    fig.add_shape(type="rect", x0=-40, x1=-15, y0=5, y1=55, line=dict(color="white", width=4), layer="below")
-    fig.add_shape(type="rect", x0=15, x1=40, y0=5, y1=55, line=dict(color="white", width=4), layer="below")
+    box_s = dict(color="white", width=4)
+    fig.add_shape(type="rect", x0=-42, x1=-18, y0=5, y1=60, line=box_s, layer="below")
+    fig.add_shape(type="rect", x0=18, x1=42, y0=5, y1=60, line=box_s, layer="below")
 
+# --- 認証 ---
 def check_auth():
     if "ok" not in st.session_state: st.session_state["ok"] = False
     if st.session_state["ok"]: return True
     st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
-    val = st.sidebar.text_input("PASSWORD", type="password")
-    if st.sidebar.button("LOGIN"):
+    st.sidebar.title("🛠 設定")
+    val = st.sidebar.text_input("パスワード", type="password")
+    if st.sidebar.button("ログイン"):
         if val == PW:
             st.session_state["ok"] = True
             st.rerun()
@@ -68,62 +61,71 @@ def check_auth():
 if check_auth():
     db_df = load_data_from_github()
     
-    # ヘッダー部分
-    col_h1, col_h2 = st.columns([2, 1])
-    with col_h1:
-        st.subheader("🔵 選手別・コース分析")
-    with col_h2:
-        st.write("📤 **新規登録**")
-
-    # メインレイアウト（左に図、右にメニュー）
-    col1, col2 = st.columns([1.5, 1])
-
-    with col1:
-        # 図の表示（左側）
-        st.markdown("### 🎵 コース別平均")
-        target_player = st.selectbox("分析対象選手（図に反映）", PLAYERS, label_visibility="collapsed")
+    # メインタイトル
+    st.title("🔵 選手別・コース別分析")
+    
+    # 選手と指標の選択
+    col_sel1, col_sel2 = st.columns(2)
+    with col_sel1:
+        target_player = st.selectbox("選手を選択してください", PLAYERS)
+    
+    pdf = db_df[db_df['Player Name'] == target_player].copy()
+    
+    if not pdf.empty:
+        pdf['Date_Only'] = pd.to_datetime(pdf['DateTime']).dt.date
+        with col_sel2:
+            target_date = st.selectbox("日付を選択", sorted(pdf['Date_Only'].unique(), reverse=True))
         
-        pdf = db_df[db_df['Player Name'] == target_player].copy()
-        if not pdf.empty:
-            pdf['Date_Only'] = pd.to_datetime(pdf['DateTime']).dt.date
-            vdf = pdf[pdf['Date_Only'] == pdf['Date_Only'].max()].copy()
-            
-            fig = go.Figure()
-            draw_stadium_graphic(fig)
-            
-            # ヒートマップ描画
-            metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
-            m = metrics[0] if metrics else "なし"
-            
-            if m != "なし":
-                # グリッド計算（中略：以前の正確なロジックを適用）
-                grid = np.random.randint(0, 100, (5, 5)) # サンプル表示用
-                fig.add_trace(go.Heatmap(
-                    z=np.flipud(grid),
-                    x=[-38.4, -19.2, 0, 19.2, 38.4], y=[55, 66, 77, 88, 100],
-                    colorscale='YlOrRd', opacity=0.8,
-                    text=np.flipud(grid), texttemplate="<span style='font-size:18px; font-weight:bold;'>%{text}</span>",
-                    showscale=False
-                ))
-                fig.add_shape(type="rect", x0=-28.8, x1=28.8, y0=45, y1=110, line=dict(color="Red", width=6))
-            
-            fig.update_layout(width=500, height=500, xaxis=dict(range=[-60, 60], visible=False), yaxis=dict(range=[0, 120], visible=False), margin=dict(l=0,r=0,t=0,b=0))
-            st.plotly_chart(fig, use_container_width=True)
+        vdf = pdf[pdf['Date_Only'] == target_date].copy()
+        metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
+        target_metric = st.selectbox("分析指標を選択", metrics if metrics else ["データなし"])
 
-    with col2:
-        # 右側のリスト・検索UI（イラスト再現）
-        st.markdown("### 🔵 選手別・2月別分析")
-        st.info("⚠️ 選手検索")
-        
-        # 検索窓
-        search_query = st.text_input("🔍 選手検索...", placeholder="選手名を入力してください", label_visibility="collapsed")
-        
-        # 選手リストのボックス
-        st.markdown("""
-        <div style="border: 1px solid #ddd; padding: 10px; border-radius: 5px; background-color: #f9f9f9; height: 300px; overflow-y: scroll;">
-        """ + "".join([f"<p style='margin:5px;'>{p}</p>" for p in PLAYERS]) + "</div>", unsafe_allow_html=True)
-        
-        st.button("分析実行", use_container_width=True)
+        st.markdown(f"### 🎵 コース別平均（{target_metric}）")
 
-    st.divider()
-    st.dataframe(db_df.head(10))
+        # --- 図の作成 ---
+        fig = go.Figure()
+        draw_stadium_background(fig)
+
+        if target_metric != "データなし":
+            clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
+            
+            # グリッド計算
+            def get_grid_pos(x, y):
+                r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
+                c = 0 if x < -28.8 else 1 if x < -9.6 else 2 if x <= 9.6 else 3 if x <= 28.8 else 4
+                return r, c
+
+            grid = np.zeros((5, 5)); counts = np.zeros((5, 5))
+            for _, row in clean_df.iterrows():
+                r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
+                grid[r, c] += row[target_metric]; counts[r, c] += 1
+            display_grid = np.where(counts > 0, grid / counts, 0)
+
+            # ヒートマップ（イラストの左上のような配置）
+            fig.add_trace(go.Heatmap(
+                z=np.flipud(display_grid),
+                x=[-38.4, -19.2, 0, 19.2, 38.4],
+                y=[58, 70, 82, 94, 106],
+                colorscale='YlOrRd',
+                opacity=0.8,
+                text=np.flipud(np.round(display_grid, 1)),
+                texttemplate="<span style='font-size:22px; font-weight:bold;'>%{text}</span>",
+                showscale=True
+            ))
+
+            # ストライクゾーン（太い赤枠）
+            fig.add_shape(type="rect", x0=-28.8, x1=28.8, y0=48, y1=116, line=dict(color="Red", width=6))
+
+        # レイアウト調整：ズームアップ
+        fig.update_layout(
+            width=850, height=750,
+            xaxis=dict(range=[-70, 70], visible=False),
+            yaxis=dict(range=[0, 140], visible=False),
+            margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor='white'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(vdf)
+    else:
+        st.warning("選択した選手のデータが見つかりません。")
