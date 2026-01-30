@@ -90,7 +90,7 @@ if check_auth():
                 bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
 
                 with col1:
-                    st.subheader("🎯 コース別平均（ヒートマップ）")
+                    st.subheader("🎯 コース別平均（ホームベース上）")
                     if target_metric != "データなし":
                         clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
                         def get_grid_pos(x, y):
@@ -120,22 +120,27 @@ if check_auth():
                             text=np.flipud(np.round(display_grid, 1)),
                             texttemplate="%{text}"
                         ))
-                        # 景色の中にヒートマップを配置
+                        # 背景の中にホームベースに合わせて配置
                         if bg_img:
-                            fig_h.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.5, layer="below"))
-                        fig_h.update_layout(width=450, height=450)
+                            fig_h.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.4, layer="below"))
+                        
+                        fig_h.update_layout(width=450, height=450, margin=dict(l=20, r=20, t=20, b=20))
                         st.plotly_chart(fig_h)
 
                 with col2:
-                    st.subheader("📍 打点プロット（散布図）")
+                    st.subheader("📍 打点プロット（ゾーン枠付き）")
                     if 'StrikeZoneX' in vdf.columns:
                         fig_s = go.Figure(data=go.Scatter(
                             x=vdf['StrikeZoneX'], y=vdf['StrikeZoneY'],
-                            mode='markers', marker=dict(size=12, color='yellow', line=dict(width=1, color='black'))
+                            mode='markers', marker=dict(size=10, color='yellow', line=dict(width=1, color='black'))
                         ))
-                        # 景色の中にプロットを配置 (座標範囲は実際のデータに合わせる)
+                        # 景色の中に配置
                         if bg_img:
-                            fig_s.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-50, y=150, sizex=100, sizey=150, sizing="stretch", opacity=0.7, layer="below"))
+                            fig_s.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-50, y=150, sizex=100, sizey=150, sizing="stretch", opacity=0.6, layer="below"))
+                        
+                        # 赤いストライクゾーン（正方形）の枠を追加
+                        fig_s.add_shape(type="rect", x0=-19, x1=19, y0=45, y1=110, line=dict(color="Red", width=3))
+                        
                         fig_s.update_layout(width=450, height=450, xaxis=dict(range=[-50, 50]), yaxis=dict(range=[0, 150]))
                         st.plotly_chart(fig_s)
                 
