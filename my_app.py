@@ -28,7 +28,8 @@ def load_data_from_github():
         if 'DateTime' in df.columns:
             df['DateTime'] = pd.to_datetime(df['DateTime'])
         return df
-    except: return pd.DataFrame()
+    except:
+        return pd.DataFrame()
 
 # --- 認証 ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
@@ -58,63 +59,68 @@ else:
         metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
         target_metric = st.selectbox("分析指標", metrics if metrics else ["データなし"])
 
-        # --- 図の作成（ここが左上図の再現） ---
+        # --- 図の作成（左上図のパース再現） ---
         fig = go.Figure()
 
-        # 1. フィールド背景（イラストのオリーブ色と土色）
-        # 芝生
-        fig.add_shape(type="rect", x0=-100, x1=100, y0=0, y1=200, fillcolor="#556b2f", line_width=0, layer="below")
-        # 土のパース（奥が狭い台形）
-        fig.add_shape(type="path", path="M -100 0 L 100 0 L 60 180 L -60 180 Z", fillcolor="#bc8f8f", line_width=0, layer="below")
+        # 1. フィールド背景（イラストのオリーブグリーンと土色）
+        fig.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=250, fillcolor="#556b2f", line_width=0, layer="below")
+        fig.add_shape(type="path", path="M -120 0 L 120 0 L 70 200 L -70 200 Z", fillcolor="#bc8f8f", line_width=0, layer="below")
         
-        # 2. 捕手視点のホームベース（上が尖る）
-        fig.add_shape(type="path", path="M -10 10 L 10 10 L 10 25 L 0 40 L -10 25 Z", fillcolor="white", line_width=1, layer="below")
+        # 2. 捕手視点のホームベース（上が尖る投手側）
+        fig.add_shape(type="path", path="M -10 10 L 10 10 L 10 25 L 0 40 L -10 25 Z", fillcolor="white", line=dict(color="gray", width=1), layer="below")
         
-        # 3. バッターボックス（パース付きで斜めに配置）
-        box_line = dict(color="rgba(255,255,255,0.6)", width=3)
-        fig.add_shape(type="path", path="M -45 5 L -20 5 L -15 60 L -40 60 Z", line=box_line, layer="below")
-        fig.add_shape(type="path", path="M 45 5 L 20 5 L 15 60 L 40 60 Z", line=box_style, layer="below")
+        # 3. バッターボックス（パース付き斜めライン）
+        box_line = dict(color="rgba(255,255,255,0.7)", width=3)
+        fig.add_shape(type="path", path="M -48 5 L -22 5 L -18 65 L -43 65 Z", line=box_line, layer="below")
+        fig.add_shape(type="path", path="M 48 5 L 22 5 L 18 65 L 43 65 Z", line=box_line, layer="below")
 
-        # 4. 立体的なストライクゾーン（上が少し狭い台形のグリッド）
+        # 4. 立体的なコース別グリッド（上が狭い台形を5x5で描画）
         if target_metric != "データなし":
-            # グリッド計算（ここはロジック通り）
-            grid = np.random.randint(40, 90, (5, 5)) # サンプル。本来は計算値を代入
-            
-            # 各マス目をパースをつけて描画（一気に Heatmap ではなく Shape で描画することでイラストを再現）
+            # グリッド計算
+            def get_grid_pos(x, y):
+                r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
+                c = 0 if x < -28.8 else 1 if x < -9.6 else 2 if x <= 9.6 else 3 if x <= 28.8 else 4
+                return r, c
+
+            grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
+            for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
+                r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
+                grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
+            display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
+
+            # イラストのようなパース付きグリッドを一つずつ描画
             for r in range(5):
                 for c in range(5):
-                    # マス目の四隅を計算（パースをつける）
-                    y_start = 70 + (4-r)*20; y_end = y_start + 18
-                    x_width_bottom = 50 - (y_start * 0.1) # 上に行くほど幅を狭くする
-                    x_width_top = 50 - (y_end * 0.1)
+                    y_low = 80 + (4-r)*16; y_high = y_low + 15
+                    # 奥行き係数（上に行くほどX幅を縮小）
+                    p_low = 1 - (y_low * 0.001); p_high = 1 - (y_high * 0.001)
                     
-                    x_s = -x_width_bottom + c*(x_width_bottom*2/5)
-                    x_e = x_s + (x_width_bottom*2/5)
-                    x_s_top = -x_width_top + c*(x_width_top*2/5)
-                    x_e_top = x_s_top + (x_width_top*2/5)
+                    x_width = 60 # 基本幅
+                    x_step_l = (x_width * p_low) / 2.5
+                    x_step_h = (x_width * p_high) / 2.5
                     
-                    val = grid[r, c]
-                    # 色の決定（YlOrRdスケール）
-                    color = f"rgba(255, {255-val*2}, 0, 0.8)"
+                    xl1 = - (x_width * p_low) / 2 + c * x_step_l; xl2 = xl1 + x_step_l
+                    xh1 = - (x_width * p_high) / 2 + c * x_step_h; xh2 = xh1 + x_step_h
                     
-                    fig.add_shape(type="path", 
-                                  path=f"M {x_s} {y_start} L {x_e} {y_start} L {x_e_top} {y_end} L {x_s_top} {y_end} Z",
+                    val = display_grid[r, c]
+                    # 色設定（YlOrRdの模倣）
+                    color = f"rgba(255, {max(0, 255-int(val*2.5))}, 0, 0.8)" if val > 0 else "rgba(200,200,200,0.2)"
+                    
+                    fig.add_shape(type="path", path=f"M {xl1} {y_low} L {xl2} {y_low} L {xh2} {y_high} L {xh1} {y_high} Z",
                                   fillcolor=color, line=dict(color="black", width=1))
-                    
-                    # 数値の追加
-                    fig.add_annotation(x=(x_s+x_e)/2, y=(y_start+y_end)/2, text=str(val), showarrow=False, 
-                                       font=dict(size=16, color="white", family="Arial Black"))
+                    if val > 0:
+                        fig.add_annotation(x=(xl1+xl2+xh1+xh2)/4, y=(y_low+y_high)/2, text=str(round(val,1)),
+                                           showarrow=False, font=dict(size=14, color="white", weight="bold"))
 
-        # 5. ストライクゾーンの太い外枠（赤・パース付き）
-        fig.add_shape(type="path", path="M -32 88 L 32 88 L 28 152 L -28 152 Z", line=dict(color="#ff0000", width=6))
+        # 5. ストライクゾーンの赤枠（パース付き）
+        fig.add_shape(type="path", path="M -36 96 L 36 96 L 32 144 L -32 144 Z", line=dict(color="#ff0000", width=6))
 
         fig.update_layout(
             width=800, height=800,
             xaxis=dict(range=[-100, 100], visible=False),
             yaxis=dict(range=[-10, 200], visible=False),
-            margin=dict(l=0,r=0,t=0,b=0),
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)'
+            margin=dict(l=0, r=0, t=0, b=0),
+            paper_bgcolor='white'
         )
         
         st.plotly_chart(fig, use_container_width=True)
