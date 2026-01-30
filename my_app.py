@@ -10,8 +10,8 @@ import json
 
 # --- 基本設定 ---
 PW = "TOYOTABASEBALLCLUB"
-GITHUB_USER = "ren-baseball" # あなたのGitHubユーザー名
-GITHUB_REPO = "batting-feedback" 
+GITHUB_USER = "sakanatama-hub" # あなたのGitHubユーザー名
+GITHUB_REPO = "Batting-feedback" 
 GITHUB_FILE_PATH = "data.csv"
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 
@@ -114,47 +114,9 @@ if check_auth():
                     # --- ヒートマップ描画 (5x5) ---
                     clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
                     
-                    def get_grid_pos(x, y):
-                        if y > 110: r = 0
-                        elif 88.2 < y <= 110: r = 1
-                        elif 66.6 < y <= 88.2: r = 2
-                        elif 45 <= y <= 66.6: r = 3
-                        else: r = 4
-                        if x < -28.8: c = 0
-                        elif -28.8 <= x < -9.6: c = 1
-                        elif -9.6 <= x <= 9.6: c = 2
-                        elif 9.6 < x <= 28.8: c = 3
-                        else: c = 4
-                        return r, c
-
-                    grid = np.zeros((5, 5)); counts = np.zeros((5, 5))
-                    for _, row in clean_df.iterrows():
-                        r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
-                        grid[r, c] += row[target_metric]; counts[r, c] += 1
-                    
-                    display_grid = np.where(counts > 0, grid / counts, 0)
-
-                    fig = go.Figure(data=go.Heatmap(
-                        z=np.flipud(display_grid),
-                        x=['極内','内','中','外','極外'], y=['極高','高','中','低','極低'],
-                        colorscale='YlOrRd', text=np.flipud(np.round(display_grid, 1)),
-                        texttemplate="%{text}", showscale=True
-                    ))
-                    
-                    bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
-                    if bg_img:
-                        fig.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.4, layer="below"))
-                    
-                    fig.update_layout(width=600, height=600, title=f"{target_metric} 分布")
-                    st.plotly_chart(fig)
-                    
-                    # 数値一覧も表示
-                    st.write("📝 生データ一覧")
-                    st.dataframe(vdf.drop(columns=['Date_Only']))
-
-    elif mode == "📥 新規データ登録":
+                  elif mode == "📥 新規データ登録":
         st.header("📥 新規データ登録 (GitHub保存)")
-        st.info("スプレッドシートは使用しません。データはGitHubのリポジトリに直接保存されます。")
+        st.info("データはGitHubのリポジトリに直接保存されます。")
         
         target_player = st.selectbox("選手を選択", PLAYERS)
         uploaded_file = st.file_uploader("CSVファイルをアップロード", type="csv")
@@ -162,6 +124,9 @@ if check_auth():
         if st.button("GitHubへ保存（コミット）"):
             if uploaded_file:
                 try:
+                    # 1. 診断情報の表示（404エラーの原因を探る）
+                    st.write(f"📡 送信先確認: https://github.com/{GITHUB_USER}/{GITHUB_REPO}")
+                    
                     new_df = pd.read_csv(uploaded_file)
                     new_df['Player Name'] = target_player
                     new_df['DateTime'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -169,16 +134,20 @@ if check_auth():
                     # 既存データと統合
                     combined_df = pd.concat([db_df, new_df], ignore_index=True)
                     
-                    # GitHubに保存
+                    # GitHubに保存実行
                     status = save_to_github(combined_df)
                     
                     if status in [200, 201]:
                         st.success(f"{target_player} 選手のデータをGitHubに保存しました！")
                         st.balloons()
                         st.cache_data.clear()
+                    elif status == 404:
+                        st.error("❌ 保存失敗: ステータス 404")
+                        st.warning(f"原因の可能性:\n1. ユーザー名 '{GITHUB_USER}' が違う\n2. リポジトリ名 '{GITHUB_REPO}' が違う\n3. トークンの権限に 'repo' が入っていない")
+                        st.info("GitHubのURLが https://github.com/ren-baseball/batting-feedback で合っているか今一度確認してください。")
                     else:
                         st.error(f"GitHubへの保存に失敗しました。ステータスコード: {status}")
                 except Exception as e:
-                    st.error(f"エラー: {e}")
+                    st.error(f"プログラムエラー: {e}")
             else:
                 st.warning("CSVファイルを選択してください。")
