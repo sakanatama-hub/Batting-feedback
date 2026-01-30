@@ -44,27 +44,24 @@ def save_to_github(df):
     res = requests.put(url, headers=headers, data=json.dumps(data))
     return res.status_code
 
-def draw_catcher_view_field(fig, zoom=False):
+def draw_zoomed_catcher_view(fig):
     """
-    捕手視点の明るいスタジアムをシミュレート
+    ホームベース周辺をズームアップした捕手視点グラフィック
     """
-    # 芝生（明るい緑）
-    fig.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=250, fillcolor="#32CD32", line_width=0, layer="below")
-    # 土のサークル（パース付き）
-    fig.add_shape(type="circle", x0=-120, x1=120, y0=-80, y1=160, fillcolor="#DEB887", line_color="#A0522D", layer="below")
+    # 背景：芝生（ズームに合わせて範囲を絞る）
+    fig.add_shape(type="rect", x0=-100, x1=100, y0=0, y1=160, fillcolor="#2E8B57", line_width=0, layer="below")
+    # 土の部分
+    fig.add_shape(type="circle", x0=-80, x1=80, y0=-40, y1=100, fillcolor="#D2B48C", line_width=0, layer="below")
     
-    # 捕手視点のホームベース（五角形の尖った方が上/投手側）
-    # M [左上] [右上] [右下中央] [中央尖り] [左下中央] Z
-    fig.add_shape(type="path", path="M -10 10 L 10 10 L 10 20 L 0 30 L -10 20 Z", 
-                  fillcolor="white", line=dict(color="gray", width=1), layer="below")
+    # 捕手視点のホームベース（投手側が尖っている）
+    # 手前が直線、奥（y座標が大きい方）に頂点
+    fig.add_shape(type="path", path="M -10 15 L 10 15 L 10 30 L 0 45 L -10 30 Z", 
+                  fillcolor="white", line=dict(color="gray", width=2), layer="below")
     
-    # バッターボックス（捕手から見て左右）
-    box_line = dict(color="white", width=3)
-    fig.add_shape(type="rect", x0=-40, x1=-15, y0=0, y1=45, line=box_line, layer="below")
-    fig.add_shape(type="rect", x0=15, x1=40, y0=0, y1=45, line=box_line, layer="below")
-    
-    # キャッチャーボックス
-    fig.add_shape(type="path", path="M -15 0 L 15 0 L 20 -20 L -20 -20 Z", line=box_line, layer="below")
+    # バッターボックスのライン（太くして見やすく）
+    box_style = dict(color="white", width=4)
+    fig.add_shape(type="rect", x0=-38, x1=-15, y0=5, y1=55, line=box_style, layer="below")
+    fig.add_shape(type="rect", x0=15, x1=38, y0=5, y1=55, line=box_style, layer="below")
 
 def check_auth():
     if "ok" not in st.session_state: st.session_state["ok"] = False
@@ -95,13 +92,13 @@ if check_auth():
             metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
             target_metric = st.selectbox("分析指標", metrics if metrics else ["データなし"])
 
-            # --- 1. コース別平均（グリッド数値復元版） ---
-            st.subheader("🎯 コース別平均 (ヒートマップ)")
+            # --- 1. コース別平均（ズーム＆デカ文字） ---
+            st.subheader("🎯 コース別平均 (Heatmap)")
             if target_metric != "データなし":
                 clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
                 
-                # 正確なグリッド判定ロジックの復元
                 def get_grid_pos(x, y):
+                    # 以前の正確な判定を維持
                     if y > 110: r = 0
                     elif 88.2 < y <= 110: r = 1
                     elif 66.6 < y <= 88.2: r = 2
@@ -121,42 +118,41 @@ if check_auth():
                 display_grid = np.where(counts > 0, grid / counts, 0)
                 
                 fig1 = go.Figure()
-                draw_catcher_view_field(fig1)
+                draw_zoomed_catcher_view(fig1)
                 
-                # ヒートマップの色と位置を以前の成功パターンに固定
+                # ヒートマップを大きく表示（座標範囲をストライクゾーン周辺に集中）
                 fig1.add_trace(go.Heatmap(
                     z=np.flipud(display_grid),
-                    x=['極内','内','中','外','極外'],
-                    y=['極低','低','中','高','極高'],
-                    x0=-38.4, dx=19.2, y0=40, dy=20, # 座標をホームベース上に合わせる
-                    colorscale='YlOrRd', # 色を元に戻す
-                    opacity=0.7,
+                    x=[-38.4, -19.2, 0, 19.2, 38.4],
+                    y=[55, 66, 77, 88, 100],
+                    colorscale='YlOrRd', opacity=0.8,
                     text=np.flipud(np.round(display_grid, 1)),
-                    texttemplate="%{text}",
+                    texttemplate="<span style='font-size:20px; font-weight:bold;'>%{text}</span>",
                     showscale=True
                 ))
-                # ストライクゾーン強調枠 (赤・太線)
-                fig1.add_shape(type="rect", x0=-28.8, x1=28.8, y0=45, y1=110, line=dict(color="Red", width=5))
+                # ストライクゾーン強調
+                fig1.add_shape(type="rect", x0=-28.8, x1=28.8, y0=45, y1=110, line=dict(color="Red", width=6))
                 
-                fig1.update_layout(width=750, height=700, xaxis=dict(range=[-100, 100], visible=False), yaxis=dict(range=[-30, 180], visible=False))
+                # ズーム設定：中心部を大きく
+                fig1.update_layout(width=800, height=700, xaxis=dict(range=[-60, 60], visible=False), yaxis=dict(range=[0, 140], visible=False))
                 st.plotly_chart(fig1)
 
-            # --- 2. 打点プロット (完璧と言われたロジックの復元) ---
+            # --- 2. 打点プロット（ズーム） ---
             st.markdown("---")
             st.subheader("📍 打点詳細プロット")
             if 'StrikeZoneX' in vdf.columns:
                 fig2 = go.Figure()
-                draw_catcher_view_field(fig2)
+                draw_zoomed_catcher_view(fig2)
                 
                 fig2.add_trace(go.Scatter(
                     x=vdf['StrikeZoneX'], y=vdf['StrikeZoneY'],
                     mode='markers',
-                    marker=dict(size=12, color='yellow', line=dict(width=1, color='black'))
+                    marker=dict(size=18, color='yellow', line=dict(width=2, color='black'))
                 ))
-                # 赤い正方形のストライクゾーン
-                fig2.add_shape(type="rect", x0=-22, x1=22, y0=45, y1=110, line=dict(color="Red", width=4))
+                # ストライクゾーン強調
+                fig2.add_shape(type="rect", x0=-22, x1=22, y0=45, y1=110, line=dict(color="Red", width=6))
                 
-                fig2.update_layout(width=750, height=700, xaxis=dict(range=[-100, 100], visible=False), yaxis=dict(range=[-30, 180], visible=False))
+                fig2.update_layout(width=800, height=700, xaxis=dict(range=[-60, 60], visible=False), yaxis=dict(range=[0, 140], visible=False))
                 st.plotly_chart(fig2)
 
             st.dataframe(vdf)
