@@ -9,7 +9,7 @@ import requests
 import json
 
 # --- 基本設定 ---
-PW = "TOYOTABASEBALLCLUB"
+PW = "1189"
 GITHUB_USER = "sakanatama-hub" 
 GITHUB_REPO = "Batting-feedback" 
 GITHUB_FILE_PATH = "data.csv"
@@ -38,7 +38,7 @@ def load_data_from_github():
             df['DateTime'] = pd.to_datetime(df['DateTime'])
         return df
     except:
-        return pd.DataFrame(columns=["DateTime", "Player Name", "StrikeZoneX", "StrikeZoneY", "Hit_Location_X", "Hit_Location_Y"])
+        return pd.DataFrame()
 
 def save_to_github(df):
     url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
@@ -77,89 +77,69 @@ if check_auth():
             target_player = st.sidebar.selectbox("選手を選択", PLAYERS)
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if pdf.empty:
-                st.info(f"{target_player} 選手のデータはまだありません。")
+                st.info(f"{target_player} 選手のデータはありません。")
             else:
                 pdf['Date_Only'] = pdf['DateTime'].dt.date
-                available_dates = sorted(pdf['Date_Only'].unique(), reverse=True)
-                target_date = st.sidebar.selectbox("日付を選択", available_dates)
+                target_date = st.sidebar.selectbox("日付を選択", sorted(pdf['Date_Only'].unique(), reverse=True))
                 vdf = pdf[pdf['Date_Only'] == target_date].copy()
                 
-                # --- コース別ヒートマップ ---
-                st.subheader("🎯 コース別分析")
+                # 指標選択
                 metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c and "Location" not in c]
                 target_metric = st.selectbox("分析指標を選択", metrics if metrics else ["データなし"])
+
+                col1, col2 = st.columns(2)
                 
-                if not vdf.empty and target_metric != "データなし":
-                    clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
-                    def get_grid_pos(x, y):
-                        if y > 110: r = 0
-                        elif 88.2 < y <= 110: r = 1
-                        elif 66.6 < y <= 88.2: r = 2
-                        elif 45 <= y <= 66.6: r = 3
-                        else: r = 4
-                        if x < -28.8: c = 0
-                        elif -28.8 <= x < -9.6: c = 1
-                        elif -9.6 <= x <= 9.6: c = 2
-                        elif 9.6 < x <= 28.8: c = 3
-                        else: c = 4
-                        return r, c
+                with col1:
+                    st.subheader("🎯 コース別")
+                    if target_metric != "データなし":
+                        clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
+                        def get_grid_pos(x, y):
+                            if y > 110: r = 0
+                            elif 88.2 < y <= 110: r = 1
+                            elif 66.6 < y <= 88.2: r = 2
+                            elif 45 <= y <= 66.6: r = 3
+                            else: r = 4
+                            if x < -28.8: c = 0
+                            elif -28.8 <= x < -9.6: c = 1
+                            elif -9.6 <= x <= 9.6: c = 2
+                            elif 9.6 < x <= 28.8: c = 3
+                            else: c = 4
+                            return r, c
 
-                    grid = np.zeros((5, 5)); counts = np.zeros((5, 5))
-                    for _, row in clean_df.iterrows():
-                        r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
-                        grid[r, c] += row[target_metric]; counts[r, c] += 1
-                    display_grid = np.where(counts > 0, grid / counts, 0)
+                        grid = np.zeros((5, 5)); counts = np.zeros((5, 5))
+                        for _, row in clean_df.iterrows():
+                            r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
+                            grid[r, c] += row[target_metric]; counts[r, c] += 1
+                        display_grid = np.where(counts > 0, grid / counts, 0)
+                        fig_h = go.Figure(data=go.Heatmap(z=np.flipud(display_grid), x=['極内','内','中','外','極外'], y=['極高','高','中','低','極低'], colorscale='YlOrRd', text=np.flipud(np.round(display_grid, 1)), texttemplate="%{text}"))
+                        bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
+                        if bg_img:
+                            fig_h.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.5, layer="below"))
+                        fig_h.update_layout(width=450, height=450)
+                        st.plotly_chart(fig_h)
 
-                    fig_heat = go.Figure(data=go.Heatmap(
-                        z=np.flipud(display_grid),
-                        x=['極内','内','中','外','極外'], y=['極高','高','中','低','極低'],
-                        colorscale='YlOrRd', text=np.flipud(np.round(display_grid, 1)),
-                        texttemplate="%{text}", showscale=True
-                    ))
-                    bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
-                    if bg_img:
-                        fig_heat.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.5, layer="below"))
-                    fig_heat.update_layout(width=500, height=500, margin=dict(l=20, r=20, t=20, b=20))
-                    st.plotly_chart(fig_heat)
-
-                # --- 打球位置散布図 ---
-                st.subheader("🚀 打球方向・位置")
-                if 'Hit_Location_X' in vdf.columns and 'Hit_Location_Y' in vdf.columns:
-                    fig_scatter = go.Figure()
-                    fig_scatter.add_trace(go.Scatter(
-                        x=vdf['Hit_Location_X'], y=vdf['Hit_Location_Y'],
-                        mode='markers', marker=dict(size=10, color='blue', opacity=0.7),
-                        text=vdf[target_metric] if target_metric != "データなし" else ""
-                    ))
-                    # 簡易的なフィールド線（必要に応じて調整）
-                    fig_scatter.add_shape(type="path", path="M 0,0 L -100,100 M 0,0 L 100,100", line_color="gray")
-                    fig_scatter.update_layout(width=500, height=500, xaxis_title="Left <-> Right", yaxis_title="Distance")
-                    st.plotly_chart(fig_scatter)
+                with col2:
+                    st.subheader("🚀 打球方向")
+                    if 'Hit_Location_X' in vdf.columns:
+                        fig_s = go.Figure(data=go.Scatter(x=vdf['Hit_Location_X'], y=vdf['Hit_Location_Y'], mode='markers', marker=dict(size=12, color='blue')))
+                        fig_s.update_layout(width=450, height=450, xaxis=dict(range=[-200, 200]), yaxis=dict(range=[0, 400]))
+                        st.plotly_chart(fig_s)
                 
-                st.dataframe(vdf.drop(columns=['Date_Only']))
+                st.dataframe(vdf)
 
     elif mode == "📥 新規データ登録":
         st.header("📥 新規データ登録")
-        target_player = st.selectbox("登録する選手を選択", PLAYERS)
-        
-        # 日付指定カレンダーを追加
-        target_date = st.date_input("登録する日付を選択してください", datetime.date.today())
-        
-        uploaded_file = st.file_uploader("ファイルをアップロード", type=["csv", "xlsx"])
+        target_player = st.selectbox("選手を選択", PLAYERS)
+        # ここが日付指定
+        target_date = st.date_input("登録する日付", datetime.date.today())
+        uploaded_file = st.file_uploader("アップロード", type=["csv", "xlsx"])
         
         if st.button("GitHubへ保存"):
             if uploaded_file:
-                try:
-                    new_df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
-                    new_df['Player Name'] = target_player
-                    # 選択された日付に現在の時刻を結合
-                    current_time = datetime.datetime.now().time()
-                    new_df['DateTime'] = datetime.datetime.combine(target_date, current_time)
-                    
-                    combined_df = pd.concat([db_df, new_df], ignore_index=True).replace({np.nan: ""})
-                    if save_to_github(combined_df) in [200, 201]:
-                        st.success(f"{target_date} 分のデータを保存しました！")
-                        st.balloons()
-                        st.cache_data.clear()
-                    else: st.error("保存失敗")
-                except Exception as e: st.error(f"エラー: {e}")
+                df_up = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
+                df_up['Player Name'] = target_player
+                df_up['DateTime'] = datetime.datetime.combine(target_date, datetime.datetime.now().time())
+                new_db = pd.concat([db_df, df_up], ignore_index=True).replace({np.nan: ""})
+                if save_to_github(new_db) in [200, 201]:
+                    st.success("保存完了！")
+                    st.balloons()
