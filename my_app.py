@@ -60,32 +60,28 @@ else:
 
             fig = go.Figure()
 
-            # --- 背景とフィールド ---
-            # 1. 全体の芝生（深緑）
-            fig.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=450, fillcolor="#1a4314", line_width=0, layer="below")
+            # --- 背景（超コンパクト版） ---
+            # 芝生
+            fig.add_shape(type="rect", x0=-180, x1=180, y0=-20, y1=320, fillcolor="#1a4314", line_width=0, layer="below")
+            # 土（フェアゾーン）
+            fig.add_shape(type="path", path="M -60 70 L -250 350 L 250 350 L 60 70 Z", fillcolor="#8B4513", line_width=0, layer="below")
+            # ホームベース周りの土
+            fig.add_shape(type="circle", x0=-40, x1=40, y0=-10, y1=70, fillcolor="#8B4513", line_width=0, layer="below")
+            # ホームベース
+            fig.add_shape(type="path", path="M -12 35 L 12 35 L 12 25 L 0 5 L -12 25 Z", fillcolor="white", line=dict(color="#444", width=2), layer="below")
             
-            # 2. フェアゾーンの土（茶色）：上部までしっかり塗りつぶし
-            fig.add_shape(type="path", path="M -80 100 L -400 500 L 400 500 L 80 100 Z", fillcolor="#8B4513", line_width=0, layer="below")
-            
-            # 3. ホームベース周りの土
-            fig.add_shape(type="circle", x0=-50, x1=50, y0=-20, y1=80, fillcolor="#8B4513", line_width=0, layer="below")
-
-            # 4. ホームベース
-            fig.add_shape(type="path", path="M -15 50 L 15 50 L 15 35 L 0 10 L -15 35 Z", fillcolor="white", line=dict(color="#444", width=2), layer="below")
-            
-            # 5. バッターボックス（中を緑に）
+            # バッターボックス
             box_style = dict(fillcolor="#1a4314", line=dict(color="rgba(255,255,255,0.8)", width=3), layer="below")
-            fig.add_shape(type="path", path="M -85 15 L -40 15 L -35 100 L -80 100 Z", **box_style)
-            fig.add_shape(type="path", path="M 85 15 L 40 15 L 35 100 L 80 100 Z", **box_style)
+            fig.add_shape(type="path", path="M -65 10 L -30 10 L -25 75 L -60 75 Z", **box_style)
+            fig.add_shape(type="path", path="M 65 10 L 30 10 L 25 75 L 60 75 Z", **box_style)
+            # ライン
+            fig.add_shape(type="line", x0=-60, y0=75, x1=-200, y1=300, line=dict(color="white", width=4), layer="below")
+            fig.add_shape(type="line", x0=60, y0=75, x1=200, y1=300, line=dict(color="white", width=4), layer="below")
 
-            # 6. ファウルライン
-            fig.add_shape(type="line", x0=-80, y0=100, x1=-320, y1=400, line=dict(color="white", width=4), layer="below")
-            fig.add_shape(type="line", x0=80, y0=100, x1=320, y1=400, line=dict(color="white", width=4), layer="below")
-
-            # --- 特大正方形グリッド ---
-            side = 32 # 画面収束のためにわずかに調整
+            # --- 特大データグリッド（サイズ維持で主役化） ---
+            side = 32 
             z_x_start = -(side * 2.5)
-            z_y_start = 140
+            z_y_start = 100 # 下に寄せて画面内に収める
             
             if target_metric != "データなし":
                 def get_grid_pos(x, y):
@@ -113,15 +109,15 @@ else:
                             fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=str(round(val,1)),
                                                showarrow=False, font=dict(size=22, color="white", weight="bold"))
 
-            # 7. 真ん中9マスの赤枠
+            # 赤枠
             fig.add_shape(type="rect", x0=z_x_start + side, x1=z_x_start + 4*side, 
                           y0=z_y_start + side, y1=z_y_start + 4*side, 
                           line=dict(color="#ff2222", width=8))
 
             fig.update_layout(
-                width=1000, height=800, # 画面に収まるサイズ
-                xaxis=dict(range=[-200, 200], visible=False, fixedrange=True),
-                yaxis=dict(range=[-30, 420], visible=False, fixedrange=True),
+                width=1000, height=650, # 高さを抑えてPC画面に最適化
+                xaxis=dict(range=[-150, 150], visible=False, fixedrange=True),
+                yaxis=dict(range=[-20, 320], visible=False, fixedrange=True),
                 margin=dict(l=0, r=0, t=10, b=0),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
             )
