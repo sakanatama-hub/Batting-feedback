@@ -87,21 +87,18 @@ if check_auth():
                 target_metric = st.selectbox("分析指標を選択", metrics if metrics else ["データなし"])
 
                 col1, col2 = st.columns(2)
-                
                 bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
 
                 with col1:
-                    st.subheader("🎯 コース別平均")
+                    st.subheader("🎯 コース別平均（ヒートマップ）")
                     if target_metric != "データなし":
                         clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
                         def get_grid_pos(x, y):
-                            # 高低（行）
                             if y > 110: r = 0
                             elif 88.2 < y <= 110: r = 1
                             elif 66.6 < y <= 88.2: r = 2
                             elif 45 <= y <= 66.6: r = 3
                             else: r = 4
-                            # 左右（列）
                             if x < -28.8: c = 0
                             elif -28.8 <= x < -9.6: c = 1
                             elif -9.6 <= x <= 9.6: c = 2
@@ -115,45 +112,33 @@ if check_auth():
                             grid[r, c] += row[target_metric]; counts[r, c] += 1
                         display_grid = np.where(counts > 0, grid / counts, 0)
                         
-                        # ヒートマップ描画
                         fig_h = go.Figure(data=go.Heatmap(
                             z=np.flipud(display_grid),
                             x=['極内','内','中','外','極外'],
                             y=['極低','低','中','高','極高'],
                             colorscale='YlOrRd',
                             text=np.flipud(np.round(display_grid, 1)),
-                            texttemplate="%{text}",
-                            showscale=True
+                            texttemplate="%{text}"
                         ))
-                        
-                        # ヒートマップに背景画像をピタッと合わせる (座標0-4の範囲)
+                        # 景色の中にヒートマップを配置
                         if bg_img:
-                            fig_h.add_layout_image(dict(
-                                source=bg_img, xref="x", yref="y",
-                                x=-0.5, y=4.5, sizex=5, sizey=5,
-                                sizing="stretch", opacity=0.6, layer="below"
-                            ))
-                        
-                        fig_h.update_layout(width=500, height=500, margin=dict(l=40, r=40, b=40, t=40))
+                            fig_h.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.5, layer="below"))
+                        fig_h.update_layout(width=450, height=450)
                         st.plotly_chart(fig_h)
 
                 with col2:
-                    st.subheader("📍 打点プロット")
-                    if 'StrikeZoneX' in vdf.columns and 'StrikeZoneY' in vdf.columns:
+                    st.subheader("📍 打点プロット（散布図）")
+                    if 'StrikeZoneX' in vdf.columns:
                         fig_s = go.Figure(data=go.Scatter(
                             x=vdf['StrikeZoneX'], y=vdf['StrikeZoneY'],
-                            mode='markers',
-                            marker=dict(size=12, color='blue', line=dict(width=1, color='white'))
+                            mode='markers', marker=dict(size=12, color='yellow', line=dict(width=1, color='black'))
                         ))
-                        # 散布図側は画像なしでシンプルに（または必要なら追加可）
-                        fig_s.update_layout(
-                            width=500, height=500,
-                            xaxis=dict(range=[-50, 50], title="左右"),
-                            yaxis=dict(range=[0, 150], title="高低")
-                        )
+                        # 景色の中にプロットを配置 (座標範囲は実際のデータに合わせる)
+                        if bg_img:
+                            fig_s.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-50, y=150, sizex=100, sizey=150, sizing="stretch", opacity=0.7, layer="below"))
+                        fig_s.update_layout(width=450, height=450, xaxis=dict(range=[-50, 50]), yaxis=dict(range=[0, 150]))
                         st.plotly_chart(fig_s)
                 
-                st.write("📝 詳細データ")
                 st.dataframe(vdf)
 
     elif mode == "📥 新規登録":
@@ -168,11 +153,9 @@ if check_auth():
                     df_up = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
                     df_up['Player Name'] = target_player
                     df_up['DateTime'] = datetime.datetime.combine(target_date, datetime.datetime.now().time())
-                    
                     new_db = pd.concat([db_df, df_up], ignore_index=True).replace({np.nan: ""})
                     if save_to_github(new_db) in [200, 201]:
-                        st.success(f"{target_date} のデータを保存しました！")
-                        st.balloons()
+                        st.success("保存完了！")
                         st.cache_data.clear()
                     else: st.error("保存失敗")
                 except Exception as e: st.error(f"エラー: {e}")
