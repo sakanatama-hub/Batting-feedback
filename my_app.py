@@ -76,9 +76,7 @@ if check_auth():
         else:
             target_player = st.sidebar.selectbox("選手を選択", PLAYERS)
             pdf = db_df[db_df['Player Name'] == target_player].copy()
-            if pdf.empty:
-                st.info(f"{target_player} 選手のデータはありません。")
-            else:
+            if not pdf.empty:
                 pdf['Date_Only'] = pdf['DateTime'].dt.date
                 target_date = st.sidebar.selectbox("日付を選択", sorted(pdf['Date_Only'].unique(), reverse=True))
                 vdf = pdf[pdf['Date_Only'] == target_date].copy()
@@ -90,7 +88,7 @@ if check_auth():
                 bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
 
                 with col1:
-                    st.subheader("🎯 コース別平均（ホームベース上）")
+                    st.subheader("🎯 コース別平均 (背景重視)")
                     if target_metric != "データなし":
                         clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
                         def get_grid_pos(x, y):
@@ -118,30 +116,36 @@ if check_auth():
                             y=['極低','低','中','高','極高'],
                             colorscale='YlOrRd',
                             text=np.flipud(np.round(display_grid, 1)),
-                            texttemplate="%{text}"
+                            texttemplate="%{text}",
+                            opacity=0.5  # ヒートマップを半透明にして背景を見せる
                         ))
-                        # 背景の中にホームベースに合わせて配置
+                        
                         if bg_img:
-                            fig_h.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.4, layer="below"))
+                            fig_h.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.8, layer="below"))
+                        
+                        # ストライクゾーンの太枠 (中3x3の範囲)
+                        fig_h.add_shape(type="rect", x0=0.5, x1=3.5, y0=0.5, y1=3.5, line=dict(color="Red", width=5))
                         
                         fig_h.update_layout(width=450, height=450, margin=dict(l=20, r=20, t=20, b=20))
                         st.plotly_chart(fig_h)
 
                 with col2:
-                    st.subheader("📍 打点プロット（ゾーン枠付き）")
+                    st.subheader("📍 打点プロット (ズームアップ)")
                     if 'StrikeZoneX' in vdf.columns:
                         fig_s = go.Figure(data=go.Scatter(
                             x=vdf['StrikeZoneX'], y=vdf['StrikeZoneY'],
-                            mode='markers', marker=dict(size=10, color='yellow', line=dict(width=1, color='black'))
+                            mode='markers', marker=dict(size=12, color='yellow', line=dict(width=1, color='black'))
                         ))
-                        # 景色の中に配置
+                        # 写真をアップにするために表示範囲を絞り、画像配置を調整
                         if bg_img:
-                            fig_s.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-50, y=150, sizex=100, sizey=150, sizing="stretch", opacity=0.6, layer="below"))
+                            # ズームに合わせて画像の配置位置を微調整 (ベースに合わせる)
+                            fig_s.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-40, y=130, sizex=80, sizey=130, sizing="stretch", opacity=1.0, layer="below"))
                         
-                        # 赤いストライクゾーン（正方形）の枠を追加
-                        fig_s.add_shape(type="rect", x0=-19, x1=19, y0=45, y1=110, line=dict(color="Red", width=3))
+                        # 赤い枠（ホームベース幅に合わせた調整値：例としてxを±22に設定）
+                        fig_s.add_shape(type="rect", x0=-22, x1=22, y0=45, y1=110, line=dict(color="Red", width=4))
                         
-                        fig_s.update_layout(width=450, height=450, xaxis=dict(range=[-50, 50]), yaxis=dict(range=[0, 150]))
+                        # 表示範囲を絞って「アップ」にする
+                        fig_s.update_layout(width=450, height=450, xaxis=dict(range=[-40, 40]), yaxis=dict(range=[20, 130]))
                         st.plotly_chart(fig_s)
                 
                 st.dataframe(vdf)
@@ -159,8 +163,7 @@ if check_auth():
                     df_up['Player Name'] = target_player
                     df_up['DateTime'] = datetime.datetime.combine(target_date, datetime.datetime.now().time())
                     new_db = pd.concat([db_df, df_up], ignore_index=True).replace({np.nan: ""})
-                    if save_to_github(new_db) in [200, 201]:
-                        st.success("保存完了！")
-                        st.cache_data.clear()
-                    else: st.error("保存失敗")
+                    save_to_github(new_db)
+                    st.success("保存完了！")
+                    st.cache_data.clear()
                 except Exception as e: st.error(f"エラー: {e}")
