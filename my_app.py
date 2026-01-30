@@ -84,69 +84,70 @@ if check_auth():
                 metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
                 target_metric = st.selectbox("分析指標を選択", metrics if metrics else ["データなし"])
 
-                col1, col2 = st.columns(2)
                 bg_img = get_encoded_bg(LOCAL_IMAGE_PATH)
 
-                with col1:
-                    st.subheader("🎯 コース別平均 (背景重視)")
-                    if target_metric != "データなし":
-                        clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
-                        def get_grid_pos(x, y):
-                            if y > 110: r = 0
-                            elif 88.2 < y <= 110: r = 1
-                            elif 66.6 < y <= 88.2: r = 2
-                            elif 45 <= y <= 66.6: r = 3
-                            else: r = 4
-                            if x < -28.8: c = 0
-                            elif -28.8 <= x < -9.6: c = 1
-                            elif -9.6 <= x <= 9.6: c = 2
-                            elif 9.6 < x <= 28.8: c = 3
-                            else: c = 4
-                            return r, c
+                # --- 1. コース別平均 (縦並び・前面にヒートマップ) ---
+                st.subheader("🎯 コース別平均分析")
+                if target_metric != "データなし":
+                    clean_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
+                    def get_grid_pos(x, y):
+                        if y > 110: r = 0
+                        elif 88.2 < y <= 110: r = 1
+                        elif 66.6 < y <= 88.2: r = 2
+                        elif 45 <= y <= 66.6: r = 3
+                        else: r = 4
+                        if x < -28.8: c = 0
+                        elif -28.8 <= x < -9.6: c = 1
+                        elif -9.6 <= x <= 9.6: c = 2
+                        elif 9.6 < x <= 28.8: c = 3
+                        else: c = 4
+                        return r, c
 
-                        grid = np.zeros((5, 5)); counts = np.zeros((5, 5))
-                        for _, row in clean_df.iterrows():
-                            r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
-                            grid[r, c] += row[target_metric]; counts[r, c] += 1
-                        display_grid = np.where(counts > 0, grid / counts, 0)
-                        
-                        fig_h = go.Figure(data=go.Heatmap(
-                            z=np.flipud(display_grid),
-                            x=['極内','内','中','外','極外'],
-                            y=['極低','低','中','高','極高'],
-                            colorscale='YlOrRd',
-                            text=np.flipud(np.round(display_grid, 1)),
-                            texttemplate="%{text}",
-                            opacity=0.5  # ヒートマップを半透明にして背景を見せる
-                        ))
-                        
-                        if bg_img:
-                            fig_h.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-0.5, y=4.5, sizex=5, sizey=5, sizing="stretch", opacity=0.8, layer="below"))
-                        
-                        # ストライクゾーンの太枠 (中3x3の範囲)
-                        fig_h.add_shape(type="rect", x0=0.5, x1=3.5, y0=0.5, y1=3.5, line=dict(color="Red", width=5))
-                        
-                        fig_h.update_layout(width=450, height=450, margin=dict(l=20, r=20, t=20, b=20))
-                        st.plotly_chart(fig_h)
+                    grid = np.zeros((5, 5)); counts = np.zeros((5, 5))
+                    for _, row in clean_df.iterrows():
+                        r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
+                        grid[r, c] += row[target_metric]; counts[r, c] += 1
+                    display_grid = np.where(counts > 0, grid / counts, 0)
+                    
+                    fig_h = go.Figure()
+                    # 前面にヒートマップを追加 (座標をStrikeZoneの実寸に合わせる)
+                    fig_h.add_trace(go.Heatmap(
+                        z=np.flipud(display_grid),
+                        x=[-38.4, -19.2, 0, 19.2, 38.4], # グリッドの中心点
+                        y=[34.2, 55.8, 77.4, 99.1, 120.7],
+                        colorscale='YlOrRd',
+                        opacity=0.7,
+                        text=np.flipud(np.round(display_grid, 1)),
+                        texttemplate="%{text}",
+                        showscale=False
+                    ))
+                    
+                    # 背面に写真を大きく配置
+                    if bg_img:
+                        fig_h.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-100, y=200, sizex=200, sizey=250, sizing="stretch", opacity=1.0, layer="below"))
+                    
+                    # ストライクゾーンの赤枠 (前面)
+                    fig_h.add_shape(type="rect", x0=-28.8, x1=28.8, y0=45, y1=110, line=dict(color="Red", width=4))
+                    
+                    fig_h.update_layout(width=700, height=700, xaxis=dict(range=[-80, 80], visible=False), yaxis=dict(range=[0, 180], visible=False))
+                    st.plotly_chart(fig_h)
 
-                with col2:
-                    st.subheader("📍 打点プロット (ズームアップ)")
-                    if 'StrikeZoneX' in vdf.columns:
-                        fig_s = go.Figure(data=go.Scatter(
-                            x=vdf['StrikeZoneX'], y=vdf['StrikeZoneY'],
-                            mode='markers', marker=dict(size=12, color='yellow', line=dict(width=1, color='black'))
-                        ))
-                        # 写真をアップにするために表示範囲を絞り、画像配置を調整
-                        if bg_img:
-                            # ズームに合わせて画像の配置位置を微調整 (ベースに合わせる)
-                            fig_s.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-40, y=130, sizex=80, sizey=130, sizing="stretch", opacity=1.0, layer="below"))
-                        
-                        # 赤い枠（ホームベース幅に合わせた調整値：例としてxを±22に設定）
-                        fig_s.add_shape(type="rect", x0=-22, x1=22, y0=45, y1=110, line=dict(color="Red", width=4))
-                        
-                        # 表示範囲を絞って「アップ」にする
-                        fig_s.update_layout(width=450, height=450, xaxis=dict(range=[-40, 40]), yaxis=dict(range=[20, 130]))
-                        st.plotly_chart(fig_s)
+                # --- 2. 打点プロット (縦並び・ズーム) ---
+                st.subheader("📍 打点詳細プロット")
+                if 'StrikeZoneX' in vdf.columns:
+                    fig_s = go.Figure()
+                    fig_s.add_trace(go.Scatter(
+                        x=vdf['StrikeZoneX'], y=vdf['StrikeZoneY'],
+                        mode='markers', marker=dict(size=14, color='yellow', line=dict(width=1, color='black'))
+                    ))
+                    
+                    if bg_img:
+                        fig_s.add_layout_image(dict(source=bg_img, xref="x", yref="y", x=-60, y=160, sizex=120, sizey=160, sizing="stretch", opacity=1.0, layer="below"))
+                    
+                    fig_s.add_shape(type="rect", x0=-22, x1=22, y0=45, y1=110, line=dict(color="Red", width=5))
+                    
+                    fig_s.update_layout(width=700, height=700, xaxis=dict(range=[-50, 50], visible=False), yaxis=dict(range=[20, 140], visible=False))
+                    st.plotly_chart(fig_s)
                 
                 st.dataframe(vdf)
 
