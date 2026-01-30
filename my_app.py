@@ -46,7 +46,6 @@ else:
     db_df = load_data_from_github()
     st.title("🔵 選手別・コース別分析")
 
-    # 完全な中央配置のためのダミーカラム
     _, center_col, _ = st.columns([1, 4, 1])
 
     with center_col:
@@ -66,77 +65,69 @@ else:
             fig = go.Figure()
 
             # 1. 地面：深緑の芝生
-            fig.add_shape(type="rect", x0=-150, x1=150, y0=-20, y1=250, fillcolor="#1a4314", line_width=0, layer="below")
+            fig.add_shape(type="rect", x0=-200, x1=200, y0=-50, y1=250, fillcolor="#1a4314", line_width=0, layer="below")
             
-            # 2. ホームベース：投手視点（尖った方が下）
-            fig.add_shape(type="path", path="M -12 40 L 12 40 L 12 25 L 0 10 L -12 25 Z", 
+            # 2. 【傾斜あり】ホームベース：投手視点（尖った方が下）
+            fig.add_shape(type="path", path="M -15 45 L 15 45 L 15 30 L 0 10 L -15 30 Z", 
                           fillcolor="white", line=dict(color="#444", width=2), layer="below")
             
-            # 3. バッターボックス（左右対称）
+            # 3. 【傾斜あり】バッターボックス
             box_line = dict(color="rgba(255,255,255,0.6)", width=3)
-            fig.add_shape(type="rect", x0=-50, x1=-18, y0=15, y1=75, line=box_line, layer="below")
-            fig.add_shape(type="rect", x0=18, x1=50, y0=15, y1=75, line=box_line, layer="below")
+            fig.add_shape(type="path", path="M -55 20 L -22 20 L -18 80 L -50 80 Z", line=box_line, layer="below")
+            fig.add_shape(type="path", path="M 55 20 L 22 20 L 18 80 L 50 80 Z", line=box_line, layer="below")
 
-            # 4. ファウルライン（ベースの延長線）
+            # 4. 【傾斜あり】ファウルライン
             line_style = dict(color="white", width=4)
-            fig.add_shape(type="line", x0=-52, y0=75, x1=-160, y1=210, line=line_style, layer="below")
-            fig.add_shape(type="line", x0=52, y0=75, x1=160, y1=210, line=line_style, layer="below")
+            fig.add_shape(type="line", x0=-50, y0=80, x1=-160, y1=220, line=line_style, layer="below")
+            fig.add_shape(type="line", x0=50, y0=80, x1=160, y1=220, line=line_style, layer="below")
 
-            # 5. 赤枠とグリッドの完全同期描画
-            # 基準となる台形の四隅 (下左, 下右, 上右, 上左)
-            trap_x = [-38, 38, 33, -33] 
-            trap_y = [100, 100, 150, 150]
+            # 5. 【垂直】ストライクゾーン（赤枠は真っ直ぐな長方形）
+            zone_x = [-28.8, 28.8]
+            zone_y = [100, 160] # 地面より少し上に垂直に配置
+            fig.add_shape(type="rect", x0=zone_x[0], x1=zone_x[1], y0=zone_y[0], y1=zone_y[1], 
+                          line=dict(color="#ff2222", width=6))
 
+            # 6. 【垂直】真ん中9マス（3x3）のヒートマップ
             if target_metric != "データなし":
-                # グリッド計算
-                def get_grid_pos(x, y):
-                    r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
-                    c = 0 if x < -28.8 else 1 if x < -9.6 else 2 if x <= 9.6 else 3 if x <= 28.8 else 4
+                # データ抽出（真ん中9マスに該当するものだけ）
+                def get_3x3_pos(x, y):
+                    if not (45 <= y <= 110 and -28.8 <= x <= 28.8): return None
+                    r = 0 if y > 88.2 else 1 if y > 66.6 else 2
+                    c = 0 if x < -9.6 else 1 if x <= 9.6 else 2
                     return r, c
 
-                grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
+                grid_val = np.zeros((3, 3)); grid_count = np.zeros((3, 3))
                 for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
-                    r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
-                    grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
+                    pos = get_3x3_pos(row['StrikeZoneX'], row['StrikeZoneY'])
+                    if pos:
+                        r, c = pos
+                        grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
                 display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
 
-                # グリッド描画（赤枠の範囲を5等分して台形を作る）
-                for r in range(5):
-                    for c in range(5):
-                        # yの比率計算
-                        y_low_pct = (4 - r) / 5; y_high_pct = (5 - r) / 5
-                        y_l = trap_y[0] + (trap_y[2] - trap_y[0]) * y_low_pct
-                        y_h = trap_y[0] + (trap_y[2] - trap_y[0]) * y_high_pct
-                        
-                        # そのy座標におけるxの幅を線形補間
-                        xl_start = trap_x[0] + (trap_x[3] - trap_x[0]) * y_low_pct
-                        xl_end = trap_x[1] + (trap_x[2] - trap_x[1]) * y_low_pct
-                        xh_start = trap_x[0] + (trap_x[3] - trap_x[0]) * y_high_pct
-                        xh_end = trap_x[1] + (trap_x[2] - trap_x[1]) * y_high_pct
-                        
-                        # x方向の5分割
-                        xl1 = xl_start + (xl_end - xl_start) * (c / 5); xl2 = xl_start + (xl_end - xl_start) * ((c+1) / 5)
-                        xh1 = xh_start + (xh_end - xh_start) * (c / 5); xh2 = xh_start + (xh_end - xh_start) * ((c+1) / 5)
+                # 3x3グリッドを垂直に描画
+                w_unit = (zone_x[1] - zone_x[0]) / 3
+                h_unit = (zone_y[1] - zone_y[0]) / 3
+                
+                for r in range(3):
+                    for c in range(3):
+                        x_s = zone_x[0] + c * w_unit
+                        x_e = x_s + w_unit
+                        y_s = zone_y[1] - (r + 1) * h_unit
+                        y_e = y_s + h_unit
                         
                         val = display_grid[r, c]
                         color = f"rgba(255, {max(0, 255-int(val*2.2))}, 0, 0.85)" if val > 0 else "rgba(255,255,255,0.05)"
                         
-                        fig.add_shape(type="path", path=f"M {xl1} {y_l} L {xl2} {y_l} L {xh2} {y_h} L {xh1} {y_h} Z",
+                        fig.add_shape(type="rect", x0=x_s, x1=x_e, y0=y_s, y1=y_e, 
                                       fillcolor=color, line=dict(color="#222", width=1))
                         if val > 0:
-                            fig.add_annotation(x=(xl1+xl2+xh1+xh2)/4, y=(y_l+y_h)/2,
-                                               text=str(round(val,1)), showarrow=False, 
-                                               font=dict(size=14, color="white", weight="bold"))
-
-            # 6. ストライクゾーンの赤枠（グリッドの基準点と完全に一致させる）
-            fig.add_shape(type="path", 
-                          path=f"M {trap_x[0]} {trap_y[0]} L {trap_x[1]} {trap_y[1]} L {trap_x[2]} {trap_y[2]} L {trap_x[3]} {trap_y[3]} Z", 
-                          line=dict(color="#ff2222", width=6))
+                            fig.add_annotation(x=(x_s+x_e)/2, y=(y_s+y_e)/2, text=str(round(val,1)),
+                                               showarrow=False, font=dict(size=18, color="white", weight="bold"))
 
             fig.update_layout(
-                width=700, height=700,
+                width=800, height=800,
                 xaxis=dict(range=[-100, 100], visible=False, fixedrange=True),
-                yaxis=dict(range=[-10, 220], visible=False, fixedrange=True),
+                yaxis=dict(range=[-20, 200], visible=False, fixedrange=True),
                 margin=dict(l=0, r=0, t=0, b=0),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
             )
