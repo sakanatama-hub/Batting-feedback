@@ -43,10 +43,11 @@ else:
     db_df = load_data_from_github()
     st.title("🔵 選手別・コース別分析")
 
-    _, center_col, _ = st.columns([0.1, 8, 0.1])
+    # 図を最大化するため左右の余白を最小に
+    _, center_col, _ = st.columns([0.05, 9.9, 0.05])
 
     with center_col:
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns([2, 2, 3])
         with c1: target_player = st.selectbox("選手を選択", PLAYERS)
         
         pdf = db_df[db_df['Player Name'] == target_player].copy()
@@ -56,41 +57,40 @@ else:
             vdf = pdf[pdf['Date_Only'] == target_date].copy()
             
             metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
-            target_metric = st.selectbox("分析指標", metrics if metrics else ["データなし"])
+            with c3: target_metric = st.selectbox("分析指標", metrics if metrics else ["データなし"])
 
             fig = go.Figure()
 
-            # 1. 全体の芝生：深緑
-            fig.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=250, fillcolor="#1a4314", line_width=0, layer="below")
+            # --- 背景とフィールド ---
+            # 1. 全体の芝生
+            fig.add_shape(type="rect", x0=-200, x1=200, y0=-50, y1=300, fillcolor="#1a4314", line_width=0, layer="below")
             
-            # 2. フェアゾーンの土：バッターボックスの前方から展開
-            # y=80（ボックスの上端）付近から広がるように調整
-            fig.add_shape(type="path", 
-                          path="M -50 80 L -180 240 L 180 240 L 50 80 Z", 
+            # 2. フェアゾーンの土
+            fig.add_shape(type="path", path="M -50 85 L -200 280 L 200 280 L 50 85 Z", 
                           fillcolor="#8B4513", line_width=0, layer="below")
             
-            # 3. ホームベース周りの土（円形イメージ）
-            fig.add_shape(type="circle", x0=-25, x1=25, y0=0, y1=50, fillcolor="#8B4513", line_width=0, layer="below")
+            # 3. ホームベース周りの土
+            fig.add_shape(type="circle", x0=-30, x1=30, y0=-10, y1=60, fillcolor="#8B4513", line_width=0, layer="below")
 
             # 4. ホームベース
             fig.add_shape(type="path", path="M -12 40 L 12 40 L 12 28 L 0 10 L -12 28 Z", 
                           fillcolor="white", line=dict(color="#444", width=2), layer="below")
             
-            # 5. バッターボックス（中を緑に保つために土レイヤーの上に配置）
-            box_line = dict(color="rgba(255,255,255,0.8)", width=3)
-            # ボックス背景（緑）を上書き
-            fig.add_shape(type="path", path="M -55 10 L -22 10 L -18 80 L -48 80 Z", fillcolor="#1a4314", line=box_line, layer="below")
-            fig.add_shape(type="path", path="M 55 10 L 22 10 L 18 80 L 50 80 Z", fillcolor="#1a4314", line=box_line, layer="below")
+            # 5. バッターボックス（中を緑に）
+            box_style = dict(fillcolor="#1a4314", line=dict(color="rgba(255,255,255,0.8)", width=3), layer="below")
+            fig.add_shape(type="path", path="M -55 10 L -22 10 L -18 85 L -48 85 Z", **box_style)
+            fig.add_shape(type="path", path="M 55 10 L 22 10 L 18 85 L 50 85 Z", **box_style)
 
             # 6. ファウルライン
-            line_style = dict(color="white", width=4)
-            fig.add_shape(type="line", x0=-48, y0=80, x1=-180, y1=240, line=line_style, layer="below")
-            fig.add_shape(type="line", x0=48, y0=80, x1=180, y1=240, line=line_style, layer="below")
+            fig.add_shape(type="line", x0=-48, y0=85, x1=-195, y1=270, line=dict(color="white", width=4), layer="below")
+            fig.add_shape(type="line", x0=48, y0=85, x1=195, y1=270, line=dict(color="white", width=4), layer="below")
 
-            # 7. グリッド：25分割（正方形）
-            z_x = [-45, 45]; z_y = [110, 200] 
-            w_u = 18; h_u = 18
-
+            # --- 正方形グリッドシステム ---
+            # 各マスが完全な正方形になるよう、幅と高さを等しく設定
+            side = 20  # 1マスの辺の長さ
+            z_x_start = -(side * 2.5)
+            z_y_start = 120
+            
             if target_metric != "データなし":
                 def get_grid_pos(x, y):
                     r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
@@ -105,28 +105,30 @@ else:
 
                 for r in range(5):
                     for c in range(5):
-                        xs = z_x[0] + c * w_u; xe = xs + w_u
-                        ys = z_y[1] - (r + 1) * h_u; ye = ys + h_u
+                        x0 = z_x_start + c * side; x1 = x0 + side
+                        y1 = z_y_start + (5 - r) * side; y0 = y1 - side
                         val = display_grid[r, c]
-                        color = f"rgba(255, {max(0, 255-int(val*2.2))}, 0, 0.85)" if val > 0 else "rgba(255,255,255,0.12)"
                         
-                        fig.add_shape(type="rect", x0=xs, x1=xe, y0=ys, y1=ye, 
+                        # 色の定義（以前の指示通り、白ベースに映えるYlOrRd系）
+                        color = f"rgba(255, {max(0, 255-int(val*2.5))}, 0, 0.9)" if val > 0 else "rgba(255,255,255,0.15)"
+                        
+                        fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, 
                                       fillcolor=color, line=dict(color="#333", width=1))
                         if val > 0:
-                            fig.add_annotation(x=(xs+xe)/2, y=(ys+ye)/2, text=str(round(val,1)),
-                                               showarrow=False, font=dict(size=16, color="white", weight="bold"))
+                            fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=str(round(val,1)),
+                                               showarrow=False, font=dict(size=18, color="white", weight="bold"))
 
-            # 8. 真ん中9マスの赤枠
-            fig.add_shape(type="rect", 
-                          x0=z_x[0] + w_u, x1=z_x[0] + 4*w_u, 
-                          y0=z_y[1] - 4*h_u, y1=z_y[1] - h_u, 
-                          line=dict(color="#ff2222", width=6))
+            # 7. 真ん中9マスの赤枠（3x3部分）
+            fig.add_shape(type="rect", x0=z_x_start + side, x1=z_x_start + 4*side, 
+                          y0=z_y_start + side, y1=z_y_start + 4*side, 
+                          line=dict(color="#ff2222", width=7))
 
+            # 特大サイズかつアスペクト比を維持
             fig.update_layout(
-                width=1000, height=850,
-                xaxis=dict(range=[-120, 120], visible=False, fixedrange=True),
-                yaxis=dict(range=[-10, 230], visible=False, fixedrange=True),
-                margin=dict(l=0, r=0, t=30, b=0),
+                width=1100, height=900,
+                xaxis=dict(range=[-150, 150], visible=False, fixedrange=True),
+                yaxis=dict(range=[-20, 280], visible=False, fixedrange=True),
+                margin=dict(l=0, r=0, t=10, b=0),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
             )
             
