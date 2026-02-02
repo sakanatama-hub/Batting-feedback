@@ -33,11 +33,11 @@ def get_color(val, metric_name):
     if val == 0:
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # 【追加】アッパースイング角度用のロジック
-    if "アッパースイング角度" in metric_name:
+    # 【修正】アッパースイング度用のロジック
+    if "アッパースイング度" in metric_name:
         base = 10.5
         diff = val - base
-        sensitivity = 15  # 25.5度で最大青、-4.5度で最大緑
+        sensitivity = 15  # 変化の幅（適宜調整してください）
         intensity = min(abs(diff) / sensitivity, 1.0)
         
         if diff > 0:
@@ -71,7 +71,7 @@ def get_color(val, metric_name):
         font_color = "black" if intensity < 0.4 else "white"
         return color, font_color
 
-# --- 認証 ---
+# --- メイン処理 ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
 if "ok" not in st.session_state: st.session_state["ok"] = False
 
