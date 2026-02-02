@@ -5,10 +5,9 @@ import plotly.graph_objects as go
 import datetime
 import requests
 import base64
-import io
 
 # --- 基本設定 ---
-PW = "1189"  # 🔑 パスワードを 1189 に変更しました
+PW = "1189" 
 GITHUB_USER = "sakanatama-hub"
 GITHUB_REPO = "Batting-feedback"
 GITHUB_FILE_PATH = "data.csv"
@@ -25,6 +24,7 @@ PLAYER_HANDS = {
 }
 PLAYERS = list(PLAYER_HANDS.keys())
 
+# --- GitHub連携関数 ---
 def load_data_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
     try:
@@ -47,6 +47,7 @@ def save_to_github(new_df):
     put_res = requests.put(url, headers=headers, json=data)
     return put_res.status_code in [200, 201]
 
+# --- 共通ユーティリティ ---
 def get_color(val, metric_name):
     if val == 0 or pd.isna(val): return "rgba(255, 255, 255, 0.1)", "white"
     if "スイング時間" in metric_name:
@@ -61,9 +62,19 @@ def get_color(val, metric_name):
         color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff < 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
     else:
         color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff > 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
-    return color, ("black" if intensity < 0.4 else "white")
+    f_color = "black" if intensity < 0.4 else "white"
+    return color, f_color
 
-# --- UI設定 ---
+def get_3x3_grid(df, metric):
+    grid = np.zeros((3, 3)); counts = np.zeros((3, 3))
+    valid = df.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
+    for _, row in valid.iterrows():
+        c = 0 if row['StrikeZoneX'] < -9.6 else 1 if row['StrikeZoneX'] <= 9.6 else 2
+        r = 0 if row['StrikeZoneY'] > 88.3 else 1 if row['StrikeZoneY'] > 66.6 else 2
+        grid[r, c] += row[metric]; counts[r, c] += 1
+    return np.where(counts > 0, grid / counts, 0)
+
+# --- UI ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
 if "ok" not in st.session_state: st.session_state["ok"] = False
 
@@ -76,6 +87,7 @@ else:
     db_df = load_data_from_github()
     tab1, tab2, tab3 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録"])
 
+    # --- TAB 1: 個人分析 (5x5 & Point) ---
     with tab1:
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
@@ -86,143 +98,119 @@ else:
             if not pdf.empty:
                 pdf['Date_Only'] = pd.to_datetime(pdf['DateTime']).dt.date
                 with c2:
-                    date_range = st.date_input("分析期間を選択", value=(pdf['Date_Only'].min(), pdf['Date_Only'].max()), key="range_tab1")
+                    date_range = st.date_input("分析期間", value=(pdf['Date_Only'].min(), pdf['Date_Only'].max()), key="range_tab1")
                 
-                if isinstance(date_range, tuple) and len(date_range) == 2:
-                    start_date, end_date = date_range
-                    vdf = pdf[(pdf['Date_Only'] >= start_date) & (pdf['Date_Only'] <= end_date)].copy()
-                else:
-                    vdf = pd.DataFrame()
-
+                vdf = pdf[(pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])] if isinstance(date_range, tuple) and len(date_range) == 2 else pdf.copy()
                 metrics = [c for c in pdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
-                with c3: target_metric = st.selectbox("分析指標", metrics if metrics else ["データなし"], key="m_tab1")
+                with c3: target_metric = st.selectbox("分析指標", metrics, key="m_tab1")
 
                 if not vdf.empty:
                     st.subheader(f"📊 {target_metric}：期間内平均")
                     fig_heat = go.Figure()
+                    # 芝・土・ホームベース描画 (以前のパス指定を完全維持)
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
-                    L_x, L_y, R_x, R_y = 125, 140, -125, 140
-                    fig_heat.add_shape(type="path", path=f"M {R_x} {R_y} L -450 600 L 450 600 L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
+                    fig_heat.add_shape(type="path", path="M -125 140 L -450 600 L 450 600 L 125 140 Z", fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
-                    box_style = dict(fillcolor="rgba(255, 255, 255, 0.1)", line=dict(color="rgba(255,255,255,0.8)", width=4), layer="below")
-                    fig_heat.add_shape(type="path", path="M 130 20 L 65 20 L 60 140 L 125 140 Z", **box_style)
-                    fig_heat.add_shape(type="path", path="M -130 20 L -65 20 L -60 140 L -125 140 Z", **box_style)
-                    
-                    grid_side = 55
-                    z_x_start, z_y_start = -(grid_side * 2.5), 180 
-                    def get_grid_pos(x, y):
+                    # 5x5グリッド計算
+                    grid_side = 55; z_x_start, z_y_start = -(grid_side * 2.5), 180 
+                    def get_5x5(x, y):
                         r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
                         c = 0 if x < -28.8 else 1 if x < -9.6 else 2 if x <= 9.6 else 3 if x <= 28.8 else 4
                         return r, c
-                    grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
+                    g5_val = np.zeros((5, 5)); g5_cnt = np.zeros((5, 5))
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
-                        r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
-                        grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
-                    display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
+                        r, c = get_5x5(row['StrikeZoneX'], row['StrikeZoneY'])
+                        g5_val[r, c] += row[target_metric]; g5_cnt[r, c] += 1
+                    disp_g5 = np.where(g5_cnt > 0, g5_val / g5_cnt, 0)
                     for r in range(5):
                         for c in range(5):
-                            logic_c = c if hand == "右" else (4 - c)
+                            lc = c if hand == "右" else (4 - c)
                             x0, x1 = z_x_start + c * grid_side, z_x_start + (c+1) * grid_side
                             y0, y1 = z_y_start + (4-r) * grid_side, z_y_start + (5-r) * grid_side
-                            val = display_grid[r, logic_c]
-                            color, f_color = get_color(val, target_metric)
+                            v = disp_g5[r, lc]
+                            color, fc = get_color(v, target_metric)
                             fig_heat.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1.5))
-                            if val > 0:
-                                txt = f"{val:.3f}" if "時間" in target_metric else f"{val:.1f}"
-                                fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=18, color=f_color, weight="bold"))
-                    
-                    fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                    st.plotly_chart(fig_heat, use_container_width=True)
+                            if v > 0: fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=f"{v:.1f}", showarrow=False, font=dict(size=14, color=fc, weight="bold"))
+                    fig_heat.update_layout(width=800, height=600, xaxis=dict(visible=False, range=[-350,350]), yaxis=dict(visible=False, range=[-50,550]), margin=dict(l=0,r=0,t=0,b=0))
+                    st.plotly_chart(fig_heat, use_container_width=True, key="p_heat_5x5")
 
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
-                    fig_point = go.Figure()
-                    fig_point.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=200, fillcolor="#8B4513", line_width=0, layer="below")
-                    fig_point.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
-                    sc, y_off = 1.2, 40
-                    bx = 75 if hand == "左" else -75
-                    fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=140, fillcolor="rgba(200,200,200,0.4)", line_width=0)
-                    fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=145, y1=175, fillcolor="rgba(200,200,200,0.4)", line_width=0)
-                    fig_point.add_shape(type="rect", x0=-35, x1=35, y0=35, y1=115, line=dict(color="rgba(255,255,255,0.8)", width=4))
-                    
-                    plot_data = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
-                    for _, row in plot_data.iterrows():
-                        dot_color, _ = get_color(row[target_metric], target_metric)
-                        fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX'] * sc], y=[row['StrikeZoneY'] + y_off], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), text=f"{row[target_metric]}", hoverinfo='text', showlegend=False))
-                    fig_point.update_layout(width=900, height=550, xaxis=dict(range=[-150, 150], visible=False), yaxis=dict(range=[-20, 200], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                    st.plotly_chart(fig_point, use_container_width=True)
+                    fig_pt = go.Figure()
+                    fig_pt.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=200, fillcolor="#8B4513", line_width=0, layer="below")
+                    fig_pt.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
+                    for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
+                        color, _ = get_color(row[target_metric], target_metric)
+                        fig_pt.add_trace(go.Scatter(x=[row['StrikeZoneX']*1.2], y=[row['StrikeZoneY']+40], mode='markers', marker=dict(size=12, color=color, line=dict(width=1, color="white")), showlegend=False))
+                    fig_pt.update_layout(width=800, height=500, xaxis=dict(visible=False, range=[-150,150]), yaxis=dict(visible=False, range=[-20,200]))
+                    st.plotly_chart(fig_pt, use_container_width=True, key="p_pt_map")
 
+    # --- TAB 2: 比較分析 (Top3 & PickUp) ---
     with tab2:
-        st.title("⚔️ 選手間比較分析（上位3名）")
+        st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
-            all_metrics = [c for c in db_df.select_dtypes(include=[np.number]).columns if "Zone" not in c]
-            comp_metric = st.selectbox("比較する指標を選択", all_metrics, key="m_tab2")
-            
-            ascending_flag = ("スイング時間" in comp_metric)
-            top3_names = db_df.groupby('Player Name')[comp_metric].mean().sort_values(ascending=ascending_flag).head(3).index.tolist()
-            
-            cols = st.columns(3)
-            for i, name in enumerate(top3_names):
-                with cols[i]:
-                    st.subheader(f"{i+1}位: {name}")
-                    p_data = db_df[db_df['Player Name'] == name]
-                    grid = np.zeros((3, 3)); counts = np.zeros((3, 3))
-                    
-                    for _, row in p_data.dropna(subset=['StrikeZoneX', 'StrikeZoneY', comp_metric]).iterrows():
-                        c = 0 if row['StrikeZoneX'] < -9.6 else 1 if row['StrikeZoneX'] <= 9.6 else 2
-                        r = 0 if row['StrikeZoneY'] > 88.3 else 1 if row['StrikeZoneY'] > 66.6 else 2
-                        grid[r, c] += row[comp_metric]; counts[r, c] += 1
-                    
-                    avg_grid = np.where(counts > 0, grid / counts, 0)
-                    hand_label = PLAYER_HANDS[name]
-                    x_labels = ['内', '中', '外'] if hand_label == "アプリ" else ['外', '中', '内']
-                    
-                    is_time = "スイング時間" in comp_metric
-                    c_scale = 'RdBu' if is_time else 'Blues'
-                    
-                    fig = go.Figure(data=go.Heatmap(
-                        z=avg_grid, x=x_labels, y=['高', '中', '低'],
-                        colorscale=c_scale,
-                        reversescale=True if is_time else False, showscale=False
-                    ))
-                    
-                    # ✅ 修正箇所: .any() メソッドでエラーを回避
-                    has_data = (avg_grid > 0).any()
-                    max_val = avg_grid.max() if has_data else 0
-                    min_val = avg_grid[avg_grid > 0].min() if has_data else 0
-                    
+            all_m = [c for c in db_df.select_dtypes(include=[np.number]).columns if "Zone" not in c]
+            c_m = st.selectbox("比較する指標", all_m, key="m_tab2")
+            is_time = "スイング時間" in c_m
+
+            st.subheader("🥇 指標別トップ3")
+            top3 = db_df.groupby('Player Name')[c_m].mean().sort_values(ascending=is_time).head(3).index.tolist()
+            t_cols = st.columns(3)
+            for i, name in enumerate(top3):
+                with t_cols[i]:
+                    st.write(f"**{i+1}位: {name}**")
+                    grid = get_3x3_grid(db_df[db_df['Player Name'] == name], c_m)
+                    has_d = (grid > 0).any()
+                    mx, mn = (grid.max(), grid[grid > 0].min()) if has_d else (0, 0)
+                    fig = go.Figure(data=go.Heatmap(z=grid, x=['外','中','内'] if PLAYER_HANDS[name]=="左" else ['内','中','外'], y=['高','中','低'], colorscale='RdBu' if is_time else 'Blues', reversescale=is_time, showscale=False))
                     for r in range(3):
                         for c in range(3):
-                            val = avg_grid[r, c]
-                            if val > 0:
-                                # 背景の濃さに応じて文字色を決定
-                                if is_time:
-                                    font_color = "white" if val < (min_val + (max_val - min_val) * 0.3) else "black"
-                                else:
-                                    font_color = "white" if val > (min_val + (max_val - min_val) * 0.7) else "black"
-                                
-                                txt = f"{val:.3f}" if is_time else f"{val:.1f}"
-                                fig.add_annotation(x=c, y=r, text=txt, showarrow=False, font=dict(color=font_color, weight="bold"))
+                            if grid[r,c] > 0:
+                                fc = "white" if (is_time and grid[r,c] < (mn+(mx-mn)*0.3)) or (not is_time and grid[r,c] > (mn+(mx-mn)*0.7)) else "black"
+                                fig.add_annotation(x=c, y=r, text=f"{grid[r,c]:.1f}", showarrow=False, font=dict(color=fc, weight="bold"))
+                    fig.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10), xaxis=dict(side="top"))
+                    st.plotly_chart(fig, use_container_width=True, key=f"t3_{name}_{i}")
 
-                    fig.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), xaxis=dict(side="top"))
-                    st.plotly_chart(fig, use_container_width=True, key=f"comp_chart_{name}_{i}_")
+            st.markdown("---")
+            st.subheader("🆚 2名ピックアップ比較")
+            ca, cb = st.columns(2)
+            with ca: p_a = st.selectbox("選手Aを選択", PLAYERS, key="sel_a")
+            with cb: p_b = st.selectbox("選手Bを選択", PLAYERS, key="sel_b")
+            if p_a and p_b:
+                limit = 0.010 if is_time else 5.0
+                g_a, g_b = get_3x3_grid(db_df[db_df['Player Name'] == p_a], c_m), get_3x3_grid(db_df[db_df['Player Name'] == p_b], c_m)
+                p_cols = st.columns(2)
+                for idx, (name, mine, yours) in enumerate([(p_a, g_a, g_b), (p_b, g_b, g_a)]):
+                    with p_cols[idx]:
+                        fig = go.Figure()
+                        for r in range(3):
+                            for c in range(3):
+                                v, ov = mine[r,c], yours[r,c]
+                                diff = abs(v-ov) if (v>0 and ov>0) else 0
+                                lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
+                                better = (v < ov) if is_time else (v > ov)
+                                fc = "red" if better else "blue"
+                                fig.add_shape(type="rect", x0=c-0.5, x1=c+0.5, y0=r-0.5, y1=r+0.5, line=dict(color=lc, width=lw), fillcolor="white")
+                                if v > 0: fig.add_annotation(x=c, y=r, text=f"{v:.1f}", showarrow=False, font=dict(color=fc, weight="bold"))
+                        fig.update_layout(height=350, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if PLAYER_HANDS[name]=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低'], autorange="reversed"))
+                        st.plotly_chart(fig, use_container_width=True, key=f"pair_{name}_{idx}")
 
+    # --- TAB 3: データ登録 ---
     with tab3:
-        st.title("📝 Excelデータ一括登録")
+        st.title("📝 データ登録")
         with st.expander("登録設定", expanded=True):
             col1, col2 = st.columns(2)
-            with col1: reg_player = st.selectbox("登録する選手を選択", PLAYERS, key="reg_p_tab3")
-            with col2: reg_date = st.date_input("登録する日付を選択", datetime.date.today(), key="reg_d_tab3")
-        uploaded_file = st.file_uploader("Excelファイルをアップロード (.xlsx)", type=["xlsx"])
-        if uploaded_file is not None:
+            with col1: reg_player = st.selectbox("選手を選択", PLAYERS, key="reg_p")
+            with col2: reg_date = st.date_input("日付を選択", datetime.date.today(), key="reg_d")
+        uploaded_file = st.file_uploader("Excelアップロード (.xlsx)", type=["xlsx"])
+        if uploaded_file:
             try:
                 input_df = pd.read_excel(uploaded_file)
+                st.dataframe(input_df.head())
                 if st.button("GitHubへ保存"):
                     input_df['Player Name'] = reg_player
                     input_df['DateTime'] = reg_date.strftime('%Y-%m-%d')
                     updated_db = pd.concat([db_df, input_df], ignore_index=True)
                     if save_to_github(updated_db):
-                        st.success("登録完了！")
-                        st.balloons()
-            except Exception as e:
-                st.error(f"エラー: {e}")
+                        st.success("✅ 登録完了！"); st.balloons()
+            except Exception as e: st.error(f"❌ エラー: {e}")
