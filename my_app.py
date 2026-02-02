@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import datetime
 
 # --- 基本設定 ---
-PW = "TOYOTABASEBALLCLUB"
+PW = "1189"
 GITHUB_USER = "sakanatama-hub" 
 GITHUB_REPO = "Batting-feedback" 
 GITHUB_FILE_PATH = "data.csv"
@@ -64,35 +64,35 @@ else:
             fig.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
             
             # --- フィールドパーツ ---
-            # ワイドなラインと土（上部まで塗り潰し）
-            L_x, L_y = 100, 110
-            R_x, R_y = -100, 110
+            # ラインの始点をバッターボックスの角に合わせる
+            L_x, L_y = 125, 140
+            R_x, R_y = -125, 140
             Outer_x, Outer_y = 450, 600
             
+            # 土のエリア（フェアグラウンド奥まで）
             fig.add_shape(type="path", 
                           path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", 
                           fillcolor="#8B4513", line_width=0, layer="below")
             
-            # 土のサークル
-            fig.add_shape(type="circle", x0=-100, x1=100, y0=-50, y1=150, fillcolor="#8B4513", line_width=0, layer="below")
+            # 土のサークル（ホームプレート周辺）
+            fig.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
             
-            # 【巨大化】ホームベース
+            # ホームベース
             fig.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", 
                           fillcolor="white", line=dict(color="#444", width=3), layer="below")
             
-            # 【巨大化】バッターボックス（中を緑に）
+            # バッターボックス
             box_style = dict(fillcolor="#1a4314", line=dict(color="rgba(255,255,255,0.8)", width=4), layer="below")
             fig.add_shape(type="path", path="M -130 20 L -65 20 L -60 140 L -125 140 Z", **box_style)
             fig.add_shape(type="path", path="M 130 20 L 65 20 L 60 140 L 125 140 Z", **box_style)
 
-            # ファウルライン
+            # ファウルライン（始点をボックスの角に設定して侵食を回避）
             fig.add_shape(type="line", x0=L_x, y0=L_y, x1=Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
             fig.add_shape(type="line", x0=R_x, y0=R_y, x1=-Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
 
-            # --- 25分割グリッド：座標計算で「正方形」を維持 ---
-            # 図全体の比率に依存せず、xとyの増分を揃える
-            grid_side_x = 45  # x方向の1マスの幅
-            grid_side_y = 45  # y方向の1マスの幅（xと揃えることで正方形に）
+            # --- 25分割グリッド：座標計算 ---
+            grid_side_x = 45
+            grid_side_y = 45
             z_x_start = -(grid_side_x * 2.5)
             z_y_start = 180 
             
@@ -127,7 +127,7 @@ else:
                           line=dict(color="#ff2222", width=10))
 
             fig.update_layout(
-                width=1000, height=700, # 全体枠は長方形
+                width=1000, height=700,
                 xaxis=dict(range=[-350, 350], visible=False, fixedrange=True),
                 yaxis=dict(range=[-40, 500], visible=False, fixedrange=True),
                 margin=dict(l=0, r=0, t=10, b=0),
