@@ -205,7 +205,7 @@ else:
                                 fig.add_annotation(x=c, y=r, text=txt, showarrow=False, font=dict(color=font_color, weight="bold"))
 
                     fig.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), xaxis=dict(side="top"))
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, key=f"comp_chart_{name}_{i}_")
 
     with tab3:
         st.title("📝 Excelデータ一括登録")
