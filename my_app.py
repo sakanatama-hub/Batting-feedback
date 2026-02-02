@@ -34,18 +34,6 @@ def load_data_from_github():
     except:
         return pd.DataFrame()
 
-def save_to_github(new_df):
-    url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    res = requests.get(url, headers=headers)
-    sha = res.json().get("sha") if res.status_code == 200 else None
-    csv_content = new_df.to_csv(index=False)
-    b64_content = base64.b64encode(csv_content.encode()).decode()
-    data = {"message": "Update batting data", "content": b64_content}
-    if sha: data["sha"] = sha
-    put_res = requests.put(url, headers=headers, json=data)
-    return put_res.status_code in [200, 201]
-
 def get_color(val, metric_name):
     if val == 0 or pd.isna(val): return "rgba(255, 255, 255, 0.1)", "white"
     if "スイング時間" in metric_name:
@@ -93,15 +81,30 @@ else:
                 metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
                 with c3: target_metric = st.selectbox("分析指標", metrics if metrics else ["データなし"])
 
-                # 1. コース別平均（野球場デザイン）
+                # --- 1. コース別平均（バッターボックス復活版） ---
                 st.subheader(f"📊 {target_metric}：コース別平均")
                 fig_heat = go.Figure()
+                
+                # 背景：グラウンド
                 fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
+                # 土の部分（ホーム周辺）
                 L_x, L_y, R_x, R_y, Outer_x, Outer_y = 125, 140, -125, 140, 450, 600
                 fig_heat.add_shape(type="path", path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
                 fig_heat.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
+                # ホームベース
                 fig_heat.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
                 
+                # ★バッターボックス（復活）
+                box_style = dict(fillcolor="rgba(255, 255, 255, 0.1)", line=dict(color="rgba(255,255,255,0.8)", width=4), layer="below")
+                # 左打者用ボックス
+                fig_heat.add_shape(type="path", path="M 130 20 L 65 20 L 60 140 L 125 140 Z", **box_style)
+                # 右打者用ボックス
+                fig_heat.add_shape(type="path", path="M -130 20 L -65 20 L -60 140 L -125 140 Z", **box_style)
+
+                # ライン
+                fig_heat.add_shape(type="line", x0=L_x, y0=L_y, x1=Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
+                fig_heat.add_shape(type="line", x0=R_x, y0=R_y, x1=-Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
+
                 grid_side = 55
                 z_x_start, z_y_start = -(grid_side * 2.5), 180 
 
@@ -119,6 +122,7 @@ else:
                     
                     for r in range(5):
                         for c in range(5):
+                            # 打席に合わせて左右を入れ替え
                             logic_c = c if hand == "右" else (4 - c)
                             x0, x1 = z_x_start + c * grid_side, z_x_start + (c+1) * grid_side
                             y0, y1 = z_y_start + (4-r) * grid_side, z_y_start + (5-r) * grid_side
@@ -129,7 +133,7 @@ else:
                                 txt = f"{val:.3f}" if "時間" in target_metric else f"{val:.1f}"
                                 fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=18, color=f_color, weight="bold"))
 
-                    # カラーバーの設定（tvをリスト形式に修正）
+                    # カラーバー
                     if "スイング時間" in target_metric:
                         c_scale, zm, zM, tv = [[0, "red"], [0.5, "white"], [1, "blue"]], 0.10, 0.20, [0.10, 0.15, 0.20]
                     elif "アッパースイング度" in target_metric:
@@ -141,11 +145,13 @@ else:
                         marker=dict(colorscale=c_scale, cmin=zm, cmax=zM, showscale=True, 
                         colorbar=dict(tickvals=tv, tickfont=dict(color="white"), thickness=12, x=0.92)), showlegend=False))
 
+                # ストライクゾーンの赤い太枠
                 fig_heat.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="#ff2222", width=6))
+                
                 fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_heat, use_container_width=True)
 
-                # 2. インパクトポイント
+                # --- 2. インパクトポイント（下部の図） ---
                 st.subheader(f"📍 {target_metric}：インパクトポイント")
                 fig_point = go.Figure()
                 fig_point.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=200, fillcolor="#8B4513", line_width=0, layer="below")
@@ -167,7 +173,3 @@ else:
 
                 fig_point.update_layout(width=900, height=550, xaxis=dict(range=[-150, 150], visible=False), yaxis=dict(range=[-20, 200], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_point, use_container_width=True)
-
-    with tab2:
-        st.title("📝 データ登録")
-        # (登録用フォームが必要な場合はここに追加してください)
