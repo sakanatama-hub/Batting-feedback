@@ -8,7 +8,7 @@ import base64
 import io
 
 # --- 基本設定 ---
-PW = "TOYOTABASEBALLCLUB"
+PW = "1189"  # 🔑 パスワードを 1189 に変更しました
 GITHUB_USER = "sakanatama-hub"
 GITHUB_REPO = "Batting-feedback"
 GITHUB_FILE_PATH = "data.csv"
@@ -175,9 +175,8 @@ else:
                     
                     avg_grid = np.where(counts > 0, grid / counts, 0)
                     hand_label = PLAYER_HANDS[name]
-                    x_labels = ['内', '中', '外'] if hand_label == "右" else ['外', '中', '内']
+                    x_labels = ['内', '中', '外'] if hand_label == "アプリ" else ['外', '中', '内']
                     
-                    # カラースケールの設定
                     is_time = "スイング時間" in comp_metric
                     c_scale = 'RdBu' if is_time else 'Blues'
                     
@@ -187,16 +186,16 @@ else:
                         reversescale=True if is_time else False, showscale=False
                     ))
                     
-                    # マスの最大値・最小値を取得して文字色判定に使用
-                    max_val = avg_grid.max()
-                    min_val = avg_grid[avg_grid > 0].min() if any(avg_grid > 0) else 0
+                    # ✅ 修正箇所: .any() メソッドでエラーを回避
+                    has_data = (avg_grid > 0).any()
+                    max_val = avg_grid.max() if has_data else 0
+                    min_val = avg_grid[avg_grid > 0].min() if has_data else 0
                     
                     for r in range(3):
                         for c in range(3):
                             val = avg_grid[r, c]
                             if val > 0:
-                                # 💡 文字色ロジックの改善: 背景色が濃い(端に近い)場合は白、薄い場合は黒
-                                # スイング時間の場合は小さいほど濃い(赤)、速度などの場合は大きいほど濃い(青)
+                                # 背景の濃さに応じて文字色を決定
                                 if is_time:
                                     font_color = "white" if val < (min_val + (max_val - min_val) * 0.3) else "black"
                                 else:
