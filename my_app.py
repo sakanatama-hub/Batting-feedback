@@ -87,20 +87,22 @@ else:
         st.title("🔵 選手別打撃分析")
         if not db_df.empty:
             c1, c2, c3 = st.columns([2, 2, 3])
-            with c1: target_player = st.selectbox("選手を選択", PLAYERS)
+            with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="ana_player")
             hand = PLAYER_HANDS[target_player]
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             
             if not pdf.empty:
                 pdf['Date_Only'] = pd.to_datetime(pdf['DateTime']).dt.date
-                with c2: target_date = st.selectbox("日付を選択", sorted(pdf['Date_Only'].unique(), reverse=True))
+                with c2: target_date = st.selectbox("日付を選択", sorted(pdf['Date_Only'].unique(), reverse=True), key="ana_date")
                 vdf = pdf[pdf['Date_Only'] == target_date].copy()
-                metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
-                with c3: target_metric = st.selectbox("分析指標", metrics)
+                # ゾーン情報を除く数値列を取得
+                metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c and "StrikeZone" not in c]
+                with c3: target_metric = st.selectbox("分析指標", metrics, key="ana_metric")
 
-                # 1. コース別平均（ヒートマップ）
+                # 1. コース別平均（俯瞰ヒートマップ）
                 st.subheader(f"📊 {target_metric}：コース別平均")
                 fig_heat = go.Figure()
+                # 野球場描画
                 fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
                 L_x, L_y, R_x, R_y, Outer_x, Outer_y = 125, 140, -125, 140, 450, 600
                 fig_heat.add_shape(type="path", path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
@@ -119,11 +121,14 @@ else:
                     r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
                     c = 0 if x < -28.8 else 1 if x < -9.6 else 2 if x <= 9.6 else 3 if x <= 28.8 else 4
                     return r, c
+
                 grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
-                for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
+                valid_data = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
+                for _, row in valid_data.iterrows():
                     r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
                     grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
                 display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
+
                 for r in range(5):
                     for c in range(5):
                         x0, x1 = z_x_start + c * grid_side, z_x_start + (c+1) * grid_side
@@ -133,17 +138,25 @@ else:
                         fig_heat.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1.5))
                         if val > 0:
                             txt = str(round(val,3)) if "時間" in target_metric else str(round(val,1))
-                            fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=22, color=f_color, weight="bold"))
+                            fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=18, color=f_color, weight="bold"))
 
+                # カラーバー設定（エラー回避用の安全なロジック）
                 if "スイング時間" in target_metric:
-                    c_scale, zm, zM, tv = [[0, "red"], [0.5, "white"], [1, "blue"]], 0.10, 0.20, [0.10, 0.15, 0.20]
+                    c_scale, zm, zM = [[0, "red"], [0.5, "white"], [1, "blue"]], 0.10, 0.20
                 elif "アッパースイング度" in target_metric:
-                    c_scale, zm, zM, tv = [[0, "green"], [0.5, "white"], [1, "blue"]], -4.5, 25.5, [-4.5, 10.5, 25.5]
+                    c_scale, zm, zM = [[0, "green"], [0.5, "white"], [1, "blue"]], -10.0, 30.0
                 else:
-                    c_scale, zm, zM, tv = [[0, "blue"], [0.5, "white"], [1, "red"]], 75, 105, 135
-                fig_heat.add_trace(go.Scatter(x=[None], y=[None], mode='markers', marker=dict(colorscale=c_scale, cmin=zm, cmax=zM, showscale=True, colorbar=dict(tickvals=tv, tickfont=dict(color="white"), thickness=12, x=0.92)), showlegend=False))
-                fig_heat.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="#ff2222", width=6))
-                fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                    c_scale, zm, zM = [[0, "blue"], [0.5, "white"], [1, "red"]], 70, 140
+
+                fig_heat.add_trace(go.Scatter(
+                    x=[None], y=[None], mode='markers',
+                    marker=dict(colorscale=c_scale, cmin=zm, cmax=zM, showscale=True, 
+                                colorbar=dict(tickfont=dict(color="white"), thickness=15, x=0.9)),
+                    showlegend=False
+                ))
+
+                fig_heat.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="#ff2222", width=4))
+                fig_heat.update_layout(width=800, height=600, xaxis=dict(visible=False), yaxis=dict(visible=False), margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_heat, use_container_width=True)
 
                 # 2. インパクトポイント（打者シルエット付き）
@@ -159,40 +172,38 @@ else:
                 fig_point.add_shape(type="rect", x0=sx_min, x1=sx_max, y0=sy_min, y1=sy_max, line=dict(color="rgba(255,255,255,0.8)", width=4))
                 for i in range(1, 3):
                     vx = sx_min + (sx_max - sx_min) * (i / 3)
-                    fig_point.add_shape(type="line", x0=vx, x1=vx, y0=sy_min, y1=sy_max, line=dict(color="rgba(255,255,255,0.3)", width=1.5, dash="dot"))
+                    fig_point.add_shape(type="line", x0=vx, x1=vx, y0=sy_min, y1=sy_max, line=dict(color="rgba(255,255,255,0.3)", width=1, dash="dot"))
                     vy = sy_min + (sy_max - sy_min) * (i / 3)
-                    fig_point.add_shape(type="line", x0=sx_min, x1=sx_max, y0=vy, y1=vy, line=dict(color="rgba(255,255,255,0.3)", width=1.5, dash="dot"))
+                    fig_point.add_shape(type="line", x0=sx_min, x1=sx_max, y0=vy, y1=vy, line=dict(color="rgba(255,255,255,0.3)", width=1, dash="dot"))
                 
-                plot_data = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
-                for _, row in plot_data.iterrows():
+                for _, row in valid_data.iterrows():
                     val = row[target_metric]
                     dot_color, _ = get_color(val, target_metric)
-                    fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX'] * sc], y=[row['StrikeZoneY'] + y_off], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), text=f"{target_metric}: {val}", hoverinfo='text', showlegend=False))
-                fig_point.update_layout(width=900, height=550, xaxis=dict(range=[-150, 150], visible=False), yaxis=dict(range=[-20, 200], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                    fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX'] * sc], y=[row['StrikeZoneY'] + y_off], mode='markers', marker=dict(size=12, color=dot_color, line=dict(width=1, color="white")), text=f"{val}", hoverinfo='text', showlegend=False))
+                fig_point.update_layout(width=800, height=500, xaxis=dict(range=[-150, 150], visible=False), yaxis=dict(range=[-20, 200], visible=False), margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_point, use_container_width=True)
                 st.dataframe(vdf)
             else:
-                st.warning("この選手のデータはまだありません。")
+                st.warning("選択した選手のデータが見つかりません。登録タブからデータを追加してください。")
 
     # --- タブ2: 登録 ---
     with tab2:
         st.title("📝 データ一括登録")
         with st.expander("📂 ファイルから登録 (Excel/CSV)", expanded=True):
-            col1, col2 = st.columns(2)
-            with col1: upload_player = st.selectbox("登録する選手", PLAYERS, key="upload_p")
-            with col2: upload_date = st.date_input("練習日を選択", datetime.date.today())
-            uploaded_file = st.file_uploader("ファイルを選択", type=['xlsx', 'csv'])
-            if uploaded_file:
+            c1, c2 = st.columns(2)
+            with c1: up_player = st.selectbox("選手を選択", PLAYERS, key="reg_player")
+            with c2: up_date = st.date_input("練習日を選択", datetime.date.today(), key="reg_date")
+            up_file = st.file_uploader("ファイルを選択", type=['xlsx', 'csv'], key="reg_file")
+            if up_file:
                 try:
-                    temp_df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
-                    temp_df['Player Name'] = upload_player
-                    temp_df['DateTime'] = upload_date.strftime("%Y-%m-%d") + " 00:00:00"
-                    st.write("### 登録内容のプレビュー")
-                    st.dataframe(temp_df.head())
-                    if st.button("この内容で追加保存する"):
-                        new_db_df = pd.concat([db_df, temp_df], ignore_index=True)
-                        if save_to_github(new_db_df):
-                            st.success(f"保存完了！")
+                    df_new = pd.read_excel(up_file) if up_file.name.endswith('.xlsx') else pd.read_csv(up_file)
+                    df_new['Player Name'] = up_player
+                    df_new['DateTime'] = up_date.strftime("%Y-%m-%d") + " 00:00:00"
+                    st.write("### プレビュー")
+                    st.dataframe(df_new.head())
+                    if st.button("GitHubへ追加保存"):
+                        if save_to_github(pd.concat([db_df, df_new], ignore_index=True)):
+                            st.success("保存完了！")
                             st.rerun()
                         else: st.error("保存失敗")
-                except Exception as e: st.error(f"エラー: {e}")
+                except Exception as e: st.error(f"読み込みエラー: {e}")
