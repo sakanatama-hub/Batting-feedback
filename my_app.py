@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import datetime
 
 # --- 基本設定 ---
-PW = "1189"
+PW = "TOYOTABASEBALLCLUB"
 GITHUB_USER = "sakanatama-hub" 
 GITHUB_REPO = "Batting-feedback" 
 GITHUB_FILE_PATH = "data.csv"
@@ -27,6 +27,32 @@ def load_data_from_github():
         return df
     except:
         return pd.DataFrame()
+
+# 指標に応じた色を計算する関数
+def get_color(val, metric_name):
+    if val == 0:
+        return "rgba(255,255,255,0.2)"
+    
+    # 1. 打球速度 (Exit Velocity) - 160km以上で濃い赤
+    if "速度" in metric_name or "ExitVelo" in metric_name:
+        scale = min(int(val * 1.5), 255)
+        return f"rgba(255, {255 - scale}, 0, 0.9)"
+    
+    # 2. 飛距離 (Distance) - 100m以上で濃い青〜紫系
+    elif "距離" in metric_name or "Distance" in metric_name:
+        scale = min(int(val * 2.5), 255)
+        return f"rgba({255 - scale}, {255 - scale}, 255, 0.9)"
+    
+    # 3. 打出し角度 (Launch Angle) - バレル圏内（25-35度）をピンクに
+    elif "角度" in metric_name or "Angle" in metric_name:
+        if 25 <= val <= 35:
+            return "rgba(255, 105, 180, 0.9)" # ピンク
+        return "rgba(0, 200, 255, 0.7)" # それ以外は水色
+    
+    # 4. デフォルト（オレンジ系）
+    else:
+        scale = min(int(val * 2.0), 255)
+        return f"rgba(255, {255 - scale}, 0, 0.8)"
 
 # --- 認証 ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
@@ -60,21 +86,18 @@ else:
 
             fig = go.Figure()
 
-            # --- 背景：芝生（深緑） ---
+            # --- 背景：芝生 ---
             fig.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
             
             # --- フィールドパーツ ---
-            # ラインの始点をバッターボックスの角に合わせる
             L_x, L_y = 125, 140
             R_x, R_y = -125, 140
             Outer_x, Outer_y = 450, 600
             
-            # 土のエリア（フェアグラウンド奥まで）
+            # 土のエリア
             fig.add_shape(type="path", 
                           path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", 
                           fillcolor="#8B4513", line_width=0, layer="below")
-            
-            # 土のサークル（ホームプレート周辺）
             fig.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
             
             # ホームベース
@@ -86,11 +109,11 @@ else:
             fig.add_shape(type="path", path="M -130 20 L -65 20 L -60 140 L -125 140 Z", **box_style)
             fig.add_shape(type="path", path="M 130 20 L 65 20 L 60 140 L 125 140 Z", **box_style)
 
-            # ファウルライン（始点をボックスの角に設定して侵食を回避）
+            # ファウルライン（侵食なし）
             fig.add_shape(type="line", x0=L_x, y0=L_y, x1=Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
             fig.add_shape(type="line", x0=R_x, y0=R_y, x1=-Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
 
-            # --- 25分割グリッド：座標計算 ---
+            # --- 25分割グリッド ---
             grid_side_x = 45
             grid_side_y = 45
             z_x_start = -(grid_side_x * 2.5)
@@ -113,7 +136,9 @@ else:
                         x0 = z_x_start + c * grid_side_x; x1 = x0 + grid_side_x
                         y1 = z_y_start + (5 - r) * grid_side_y; y0 = y1 - grid_side_y
                         val = display_grid[r, c]
-                        color = f"rgba(255, {max(0, 255-int(val*2.5))}, 0, 0.95)" if val > 0 else "rgba(255,255,255,0.2)"
+                        
+                        # 指標に基づいて色を取得
+                        color = get_color(val, target_metric)
                         
                         fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, 
                                       fillcolor=color, line=dict(color="#222", width=1.5))
@@ -121,7 +146,7 @@ else:
                             fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=str(round(val,1)),
                                                showarrow=False, font=dict(size=22, color="white", weight="bold"))
 
-            # 真ん中9マスの赤枠
+            # ストライクゾーン（真ん中9マス）の赤枠
             fig.add_shape(type="rect", x0=z_x_start + grid_side_x, x1=z_x_start + 4*grid_side_x, 
                           y0=z_y_start + grid_side_y, y1=z_y_start + 4*grid_side_y, 
                           line=dict(color="#ff2222", width=10))
