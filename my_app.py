@@ -33,11 +33,11 @@ def get_color(val, metric_name):
     if val == 0:
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # 指標が「角度」または「スイング」に関連する場合（アッパー角度用）
-    if "角度" in metric_name or "Swing" in metric_name or "Attack" in metric_name:
+    # 【追加】アッパースイング角度用のロジック
+    if "アッパースイング角度" in metric_name:
         base = 10.5
         diff = val - base
-        sensitivity = 15 # 25.5度以上で真青、-4.5度以下で真緑
+        sensitivity = 15  # 25.5度で最大青、-4.5度で最大緑
         intensity = min(abs(diff) / sensitivity, 1.0)
         
         if diff > 0:
@@ -49,11 +49,10 @@ def get_color(val, metric_name):
             rb_val = int(255 * (1 - intensity))
             color = f"rgba({rb_val}, 255, {rb_val}, 0.9)"
         
-        # 文字色の判定（色が薄いときは黒、濃いときは白）
         font_color = "black" if intensity < 0.4 else "white"
         return color, font_color
 
-    # それ以外の指標（前回の105基準：赤・青）
+    # それ以外の指標（105基準：赤・青）
     else:
         base = 105
         diff = val - base
@@ -61,9 +60,11 @@ def get_color(val, metric_name):
         intensity = min(abs(diff) / sensitivity, 1.0)
         
         if diff > 0:
+            # 105より大きい：白 -> 赤
             gb_val = int(255 * (1 - intensity))
             color = f"rgba(255, {gb_val}, {gb_val}, 0.9)"
         else:
+            # 105より小さい：白 -> 青
             rg_val = int(255 * (1 - intensity))
             color = f"rgba({rg_val}, {rg_val}, 255, 0.9)"
             
@@ -141,7 +142,6 @@ else:
                         y1 = z_y_start + (5 - r) * grid_side_y; y0 = y1 - grid_side_y
                         val = display_grid[r, c]
                         
-                        # 指標名と値に基づいて色と文字色を決定
                         color, f_color = get_color(val, target_metric)
                         
                         fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, 
