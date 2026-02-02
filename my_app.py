@@ -47,7 +47,7 @@ def save_to_github(new_df):
     return put_res.status_code in [200, 201]
 
 def get_color(val, metric_name):
-    if val == 0: return "rgba(255, 255, 255, 0.1)", "white"
+    if val == 0 or pd.isna(val): return "rgba(255, 255, 255, 0.1)", "white"
     base, sensitivity = 110, 25
     diff = val - base
     intensity = min(abs(diff) / sensitivity, 1.0)
@@ -80,7 +80,8 @@ else:
             if not pdf.empty:
                 pdf['Date_Only'] = pd.to_datetime(pdf['DateTime']).dt.date
                 with c2: target_date = st.selectbox("日付を選択", sorted(pdf['Date_Only'].unique(), reverse=True))
-                vdf = pdf[pdf['Date_Only'] == target_date].copy()
+                # 選択日のデータ、かつ座標があるものだけを抽出
+                vdf = pdf[(pdf['Date_Only'] == target_date)].copy()
                 
                 metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "StrikeZone" not in c]
                 if not metrics: metrics = ["Swing Speed"]
@@ -89,17 +90,13 @@ else:
                 # --- 1. 25分割コース別平均（5x5 ヒートマップ） ---
                 st.subheader(f"📊 {target_metric}：コース別平均 (25分割)")
                 
-                # 座標(X:-35~35, Y:35~115)を5等分する
-                def get_5x5_zone(x, y):
-                    xi = int(min(max((x + 35) / 14, 0), 4)) + 1
-                    yi = int(min(max((y - 35) / 16, 0), 4)) + 1
-                    return xi, yi
-
-                # データがある場合のみ計算
+                # エラー回避用のゾーン計算
                 if not vdf.empty:
-                    res = vdf.apply(lambda r: get_5x5_zone(r['StrikeZoneX'], r['StrikeZoneY']), axis=1)
-                    vdf['zx5'] = [r[0] for r in res]
-                    vdf['zy5'] = [r[1] for r in res]
+                    # 数値計算の前にNaNを埋める
+                    temp_x = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce').fillna(0)
+                    temp_y = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce').fillna(0)
+                    vdf['zx5'] = ((temp_x + 35) / 14).clip(0, 4).astype(int) + 1
+                    vdf['zy5'] = ((temp_y - 35) / 16).clip(0, 4).astype(int) + 1
                 
                 zones = []
                 for y_idx in range(5, 0, -1):
@@ -117,7 +114,6 @@ else:
                     colorscale='Magma',
                     text=[[f"{v:.1f}" if v != 0 else "" for v in row] for row in zones],
                     texttemplate="%{text}",
-                    textfont={"size": 14, "color": "white"},
                     xgap=2, ygap=2, showscale=True
                 ))
                 fig_heat.update_layout(width=600, height=500, yaxis=dict(autorange="reversed"),
@@ -134,22 +130,21 @@ else:
                 sx_min, sx_max, sy_min, sy_max = -35, 35, 35, 115
                 b_col = "rgba(220, 220, 220, 0.4)"; m = 1 if hand == "左" else -1; offset = 85 * m
 
+                # シルエット描画（略さず維持）
                 fig_point.add_shape(type="path", path=f"M {offset-15*m} 20 L {offset-5*m} 70 L {offset+15*m} 70 L {offset+25*m} 20", line=dict(color=b_col, width=15))
                 fig_point.add_shape(type="path", path=f"M {offset-10*m} 70 Q {offset} 100, {offset-5*m} 140 L {offset+20*m} 140 Q {offset+25*m} 100, {offset+15*m} 70 Z", fillcolor=b_col, line_width=0)
                 fig_point.add_shape(type="circle", x0=offset-12*m if hand=="右" else offset+2*m, x1=offset+8*m if hand=="右" else offset-18*m, y0=145, y1=175, fillcolor=b_col, line_width=0)
                 fig_point.add_shape(type="path", path=f"M {offset-5*m} 135 L {offset-30*m} 150 L {offset-25*m} 180", line=dict(color=b_col, width=8))
                 fig_point.add_shape(type="line", x0=offset-25*m, y0=180, x1=offset-10*m, y1=230, line=dict(color="rgba(180, 180, 180, 0.5)", width=5))
-                
                 fig_point.add_shape(type="rect", x0=sx_min, x1=sx_max, y0=sy_min, y1=sy_max, line=dict(color="rgba(255,255,255,0.8)", width=4))
                 
                 if not vdf.empty:
-                    valid_data = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY'])
-                    for _, row in valid_data.iterrows():
+                    # 座標データがあるもののみプロット
+                    plot_df = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY'])
+                    for _, row in plot_df.iterrows():
                         val = row[target_metric]
                         dot_color, _ = get_color(val, target_metric)
                         fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX'] * sc], y=[row['StrikeZoneY'] + y_off], mode='markers', marker=dict(size=12, color=dot_color, line=dict(width=1, color="white")), text=f"{val}", hoverinfo='text', showlegend=False))
                 
                 fig_point.update_layout(width=800, height=550, xaxis=dict(range=[-150, 150], visible=False), yaxis=dict(range=[-20, 240], visible=False), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_point, use_container_width=True)
-            else:
-                st.warning("この選手のデータはまだ登録されていません。")
