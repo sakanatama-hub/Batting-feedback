@@ -28,31 +28,28 @@ def load_data_from_github():
     except:
         return pd.DataFrame()
 
-# 指標に応じた色を計算する関数
-def get_color(val, metric_name):
+# --- 新しい色分け定義 ---
+def get_color(val):
     if val == 0:
-        return "rgba(255,255,255,0.2)"
+        return "rgba(255, 255, 255, 0.1)"
     
-    # 1. 打球速度 (Exit Velocity) - 160km以上で濃い赤
-    if "速度" in metric_name or "ExitVelo" in metric_name:
-        scale = min(int(val * 1.5), 255)
-        return f"rgba(255, {255 - scale}, 0, 0.9)"
+    base = 105
+    diff = val - base
     
-    # 2. 飛距離 (Distance) - 100m以上で濃い青〜紫系
-    elif "距離" in metric_name or "Distance" in metric_name:
-        scale = min(int(val * 2.5), 255)
-        return f"rgba({255 - scale}, {255 - scale}, 255, 0.9)"
+    # 変化の感度調整（30の差で最大濃度になる設定）
+    sensitivity = 30 
+    intensity = min(abs(diff) / sensitivity, 1.0)
     
-    # 3. 打出し角度 (Launch Angle) - バレル圏内（25-35度）をピンクに
-    elif "角度" in metric_name or "Angle" in metric_name:
-        if 25 <= val <= 35:
-            return "rgba(255, 105, 180, 0.9)" # ピンク
-        return "rgba(0, 200, 255, 0.7)" # それ以外は水色
-    
-    # 4. デフォルト（オレンジ系）
+    if diff > 0:
+        # 105より大きい：白(255,255,255) -> 赤(255,0,0)
+        # diffが大きくなるほど、GreenとBlueを減らす
+        gb_val = int(255 * (1 - intensity))
+        return f"rgba(255, {gb_val}, {gb_val}, 0.9)"
     else:
-        scale = min(int(val * 2.0), 255)
-        return f"rgba(255, {255 - scale}, 0, 0.8)"
+        # 105より小さい：白(255,255,255) -> 青(0,0,255)
+        # diffが小さくなるほど、RedとGreenを減らす
+        rg_val = int(255 * (1 - intensity))
+        return f"rgba({rg_val}, {rg_val}, 255, 0.9)"
 
 # --- 認証 ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
@@ -90,34 +87,23 @@ else:
             fig.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
             
             # --- フィールドパーツ ---
-            L_x, L_y = 125, 140
-            R_x, R_y = -125, 140
-            Outer_x, Outer_y = 450, 600
+            L_x, L_y, R_x, R_y, Outer_x, Outer_y = 125, 140, -125, 140, 450, 600
             
-            # 土のエリア
-            fig.add_shape(type="path", 
-                          path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", 
-                          fillcolor="#8B4513", line_width=0, layer="below")
+            fig.add_shape(type="path", path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
             fig.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
+            fig.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
             
-            # ホームベース
-            fig.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", 
-                          fillcolor="white", line=dict(color="#444", width=3), layer="below")
-            
-            # バッターボックス
             box_style = dict(fillcolor="#1a4314", line=dict(color="rgba(255,255,255,0.8)", width=4), layer="below")
             fig.add_shape(type="path", path="M -130 20 L -65 20 L -60 140 L -125 140 Z", **box_style)
             fig.add_shape(type="path", path="M 130 20 L 65 20 L 60 140 L 125 140 Z", **box_style)
 
-            # ファウルライン（侵食なし）
+            # ファウルライン
             fig.add_shape(type="line", x0=L_x, y0=L_y, x1=Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
             fig.add_shape(type="line", x0=R_x, y0=R_y, x1=-Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
 
             # --- 25分割グリッド ---
-            grid_side_x = 45
-            grid_side_y = 45
-            z_x_start = -(grid_side_x * 2.5)
-            z_y_start = 180 
+            grid_side_x, grid_side_y = 45, 45
+            z_x_start, z_y_start = -(grid_side_x * 2.5), 180 
             
             if target_metric != "データなし":
                 def get_grid_pos(x, y):
@@ -137,16 +123,15 @@ else:
                         y1 = z_y_start + (5 - r) * grid_side_y; y0 = y1 - grid_side_y
                         val = display_grid[r, c]
                         
-                        # 指標に基づいて色を取得
-                        color = get_color(val, target_metric)
+                        color = get_color(val)
                         
                         fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, 
                                       fillcolor=color, line=dict(color="#222", width=1.5))
                         if val > 0:
                             fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=str(round(val,1)),
-                                               showarrow=False, font=dict(size=22, color="white", weight="bold"))
+                                               showarrow=False, font=dict(size=22, color="black" if 95 < val < 115 else "white", weight="bold"))
 
-            # ストライクゾーン（真ん中9マス）の赤枠
+            # 真ん中9マスの赤枠
             fig.add_shape(type="rect", x0=z_x_start + grid_side_x, x1=z_x_start + 4*grid_side_x, 
                           y0=z_y_start + grid_side_y, y1=z_y_start + 4*grid_side_y, 
                           line=dict(color="#ff2222", width=10))
