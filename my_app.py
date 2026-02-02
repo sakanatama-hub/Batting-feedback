@@ -28,10 +28,9 @@ def load_data_from_github():
     except:
         return pd.DataFrame()
 
-# --- 色分けの定義 ---
+# --- 色決定ロジック ---
 def get_color(val, metric_name):
-    if val == 0:
-        return "rgba(255, 255, 255, 0.1)", "white"
+    if val == 0: return "rgba(255, 255, 255, 0.1)", "white"
     
     if "スイング時間" in metric_name:
         base, sensitivity = 0.15, 0.05
@@ -40,7 +39,6 @@ def get_color(val, metric_name):
         if diff < 0: color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" 
         else: color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)" 
         return color, ("black" if intensity < 0.4 else "white")
-
     elif "アッパースイング度" in metric_name:
         base, sensitivity = 10.5, 15
         diff = val - base
@@ -48,7 +46,6 @@ def get_color(val, metric_name):
         if diff > 0: color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)" 
         else: color = f"rgba({int(255*(1-intensity))}, 255, {int(255*(1-intensity))}, 0.9)" 
         return color, ("black" if intensity < 0.4 else "white")
-
     else:
         base, sensitivity = 105, 30
         diff = val - base
@@ -56,6 +53,21 @@ def get_color(val, metric_name):
         if diff > 0: color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" 
         else: color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)" 
         return color, ("black" if intensity < 0.4 else "white")
+
+# --- フィールド描画共通関数 ---
+def draw_stadium_base(fig):
+    # 背景・芝・土
+    fig.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
+    L_x, L_y, R_x, R_y, Outer_x, Outer_y = 125, 140, -125, 140, 450, 600
+    fig.add_shape(type="path", path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
+    fig.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
+    # ホーム・ボックス・ライン
+    fig.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
+    box_style = dict(fillcolor="#1a4314", line=dict(color="rgba(255,255,255,0.8)", width=4), layer="below")
+    fig.add_shape(type="path", path="M -130 20 L -65 20 L -60 140 L -125 140 Z", **box_style)
+    fig.add_shape(type="path", path="M 130 20 L 65 20 L 60 140 L 125 140 Z", **box_style)
+    fig.add_shape(type="line", x0=L_x, y0=L_y, x1=Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
+    fig.add_shape(type="line", x0=R_x, y0=R_y, x1=-Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
 
 # --- メイン表示 ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
@@ -65,20 +77,17 @@ if not st.session_state["ok"]:
     st.title("⚾️ TOYOTA BASEBALL CLUB")
     val = st.text_input("PASSWORD", type="password")
     if st.button("LOGIN"):
-        if val == PW:
-            st.session_state["ok"] = True
-            st.rerun()
+        if val == PW: st.session_state["ok"] = True; st.rerun()
 else:
     db_df = load_data_from_github()
-    st.title("🔵 選手別・コース別分析")
+    st.title("🔵 選手別打撃分析")
 
     _, center_col, _ = st.columns([0.1, 8.5, 0.1]) 
-
     with center_col:
         c1, c2, c3 = st.columns([2, 2, 3])
         with c1: target_player = st.selectbox("選手を選択", PLAYERS)
-        
         pdf = db_df[db_df['Player Name'] == target_player].copy()
+        
         if not pdf.empty:
             pdf['Date_Only'] = pd.to_datetime(pdf['DateTime']).dt.date
             with c2: target_date = st.selectbox("日付を選択", sorted(pdf['Date_Only'].unique(), reverse=True))
@@ -86,24 +95,15 @@ else:
             metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "Zone" not in c]
             with c3: target_metric = st.selectbox("分析指標", metrics if metrics else ["データなし"])
 
-            fig = go.Figure()
-
-            # --- 背景とフィールド描画 ---
-            fig.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
-            L_x, L_y, R_x, R_y, Outer_x, Outer_y = 125, 140, -125, 140, 450, 600
-            fig.add_shape(type="path", path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
-            fig.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
-            fig.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
-            box_style = dict(fillcolor="#1a4314", line=dict(color="rgba(255,255,255,0.8)", width=4), layer="below")
-            fig.add_shape(type="path", path="M -130 20 L -65 20 L -60 140 L -125 140 Z", **box_style)
-            fig.add_shape(type="path", path="M 130 20 L 65 20 L 60 140 L 125 140 Z", **box_style)
-            fig.add_shape(type="line", x0=L_x, y0=L_y, x1=Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
-            fig.add_shape(type="line", x0=R_x, y0=R_y, x1=-Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
-
-            # --- グリッド描画 (サイズ再微調整) ---
-            grid_side = 55 # PC・モバイル両対応のバランスサイズ
+            # ---------------------------------
+            # 1. コース別平均（ヒートマップ）
+            # ---------------------------------
+            st.subheader(f"📊 {target_metric}：コース別平均")
+            fig_heat = go.Figure()
+            draw_stadium_base(fig_heat)
+            grid_side = 55
             z_x_start, z_y_start = -(grid_side * 2.5), 180 
-            
+
             if target_metric != "データなし":
                 def get_grid_pos(x, y):
                     r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
@@ -122,45 +122,40 @@ else:
                         y0, y1 = z_y_start + (4-r) * grid_side, z_y_start + (5-r) * grid_side
                         val = display_grid[r, c]
                         color, f_color = get_color(val, target_metric)
-                        fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1.5))
+                        fig_heat.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1.5))
                         if val > 0:
                             txt = str(round(val,3)) if "時間" in target_metric else str(round(val,1))
-                            fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=22, color=f_color, weight="bold"))
+                            fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=22, color=f_color, weight="bold"))
 
-                # --- カラーバー（凡例） ---
-                if "スイング時間" in target_metric:
-                    colorscale = [[0, "red"], [0.5, "white"], [1, "blue"]]
-                    zmin, zmax, tickvals = 0.10, 0.20, [0.10, 0.15, 0.20]
-                elif "アッパースイング度" in target_metric:
-                    colorscale = [[0, "green"], [0.5, "white"], [1, "blue"]]
-                    zmin, zmax, tickvals = -4.5, 25.5, [-4.5, 10.5, 25.5]
-                else:
-                    colorscale = [[0, "blue"], [0.5, "white"], [1, "red"]]
-                    zmin, zmax, tickvals = 75, 135, [75, 105, 135]
+            fig_heat.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="#ff2222", width=6))
+            fig_heat.update_layout(width=900, height=600, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig_heat, use_container_width=True)
 
-                fig.add_trace(go.Scatter(
-                    x=[None], y=[None], mode='markers',
-                    marker=dict(
-                        colorscale=colorscale, cmin=zmin, cmax=zmax, showscale=True,
-                        colorbar=dict(
-                            title=dict(text="基準", font=dict(size=12, color="white")),
-                            tickvals=tickvals, tickfont=dict(color="white", size=10),
-                            thickness=12, x=0.92, xpad=0
-                        )
-                    ),
-                    showlegend=False
-                ))
+            # ---------------------------------
+            # 2. 個別打撃位置（散布図）
+            # ---------------------------------
+            st.subheader(f"📍 {target_metric}：一球ごとの打撃位置")
+            fig_point = go.Figure()
+            draw_stadium_base(fig_point)
+            # ストライクゾーンの枠線のみ表示
+            fig_point.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="rgba(255,255,255,0.5)", width=2))
 
-            # 真ん中赤枠
-            fig.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="#ff2222", width=6))
+            if not vdf.empty:
+                plot_data = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
+                for _, row in plot_data.iterrows():
+                    val = row[target_metric]
+                    dot_color, _ = get_color(val, target_metric)
+                    fig_point.add_trace(go.Scatter(
+                        x=[row['StrikeZoneX'] * (grid_side/19.2)], # スケール調整
+                        y=[z_y_start + (row['StrikeZoneY'] - (-10)) * (grid_side/21.6)], # スケール調整
+                        mode='markers',
+                        marker=dict(size=14, color=dot_color, line=dict(width=1, color="white")),
+                        text=f"{target_metric}: {val}",
+                        hoverinfo='text',
+                        showlegend=False
+                    ))
 
-            fig.update_layout(
-                width=900, height=650, # PC画面で収まりやすいサイズに
-                xaxis=dict(range=[-320, 320], visible=False, fixedrange=True),
-                yaxis=dict(range=[-40, 520], visible=False, fixedrange=True),
-                margin=dict(l=0, r=0, t=10, b=0),
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
+            fig_point.update_layout(width=900, height=600, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig_point, use_container_width=True)
+
             st.dataframe(vdf)
