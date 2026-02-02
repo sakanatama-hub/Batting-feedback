@@ -77,64 +77,82 @@ else:
             with c3: target_metric = st.selectbox("分析指標", metrics if metrics else ["データなし"])
 
             # ---------------------------------
-            # 1. コース別平均（ヒートマップ）
+            # 1. コース別平均（スタジアム俯瞰ヒートマップ）
             # ---------------------------------
             st.subheader(f"📊 {target_metric}：コース別平均（フィールド俯瞰）")
-            # (既存のフィールド描画コードは維持...)
             fig_heat = go.Figure()
-            # ...省略（以前のコードの stadium_base 部分）...
-            # 描画の詳細は以前と同様のため省略し、下の「捕手目線」に注力します。
+            # 俯瞰図の背景描画
+            fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
+            L_x, L_y, R_x, R_y, Outer_x, Outer_y = 125, 140, -125, 140, 450, 600
+            fig_heat.add_shape(type="path", path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
+            fig_heat.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
+            fig_heat.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
+            box_style = dict(fillcolor="#1a4314", line=dict(color="rgba(255,255,255,0.8)", width=4), layer="below")
+            fig_heat.add_shape(type="path", path="M -130 20 L -65 20 L -60 140 L -125 140 Z", **box_style)
+            fig_heat.add_shape(type="path", path="M 130 20 L 65 20 L 60 140 L 125 140 Z", **box_style)
+            fig_heat.add_shape(type="line", x0=L_x, y0=L_y, x1=Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
+            fig_heat.add_shape(type="line", x0=R_x, y0=R_y, x1=-Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
+
+            # 25分割グリッドの設定
+            grid_side = 55
+            z_x_start, z_y_start = -(grid_side * 2.5), 180 
+
+            if target_metric != "データなし":
+                def get_grid_pos(x, y):
+                    r = 0 if y > 110 else 1 if y > 88.2 else 2 if y > 66.6 else 3 if y > 45 else 4
+                    c = 0 if x < -28.8 else 1 if x < -9.6 else 2 if x <= 9.6 else 3 if x <= 28.8 else 4
+                    return r, c
+
+                grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
+                for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
+                    r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
+                    grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
+                display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
+
+                for r in range(5):
+                    for c in range(5):
+                        x0, x1 = z_x_start + c * grid_side, z_x_start + (c+1) * grid_side
+                        y0, y1 = z_y_start + (4-r) * grid_side, z_y_start + (5-r) * grid_side
+                        val = display_grid[r, c]
+                        color, f_color = get_color(val, target_metric)
+                        fig_heat.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1.5))
+                        if val > 0:
+                            txt = str(round(val,3)) if "時間" in target_metric else str(round(val,1))
+                            fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=22, color=f_color, weight="bold"))
+
+            # 真ん中赤枠
+            fig_heat.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="#ff2222", width=6))
+            fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_heat, use_container_width=True)
 
             # ---------------------------------
-            # 2. 打撃位置（捕手目線）
+            # 2. 打撃位置（捕手目線インパクトポイント）
             # ---------------------------------
             st.subheader(f"📍 {target_metric}：インパクトポイント（捕手目線）")
             fig_catcher = go.Figure()
-
-            # 背景（アンツーカー色）
+            # 背景（土色）
             fig_catcher.add_shape(type="rect", x0=-100, x1=100, y0=-20, y1=150, fillcolor="#8B4513", line_width=0, layer="below")
-            
-            # ホームベース（正面から見た台形っぽく）
+            # ホームベース
             fig_catcher.add_shape(type="path", path="M -30 10 L 30 10 L 30 5 L 0 0 L -30 5 Z", fillcolor="white", line=dict(color="#444", width=2))
-            
-            # ストライクゾーン（外枠：少し太め）
-            sz_x_min, sz_x_max = -48, 48
-            sz_y_min, sz_y_max = 30, 120
+            # ストライクゾーン
+            sz_x_min, sz_x_max, sz_y_min, sz_y_max = -48, 48, 30, 120
             fig_catcher.add_shape(type="rect", x0=sz_x_min, x1=sz_x_max, y0=sz_y_min, y1=sz_y_max, line=dict(color="rgba(255,255,255,0.8)", width=4))
             
-            # ストライクゾーン（内側の5×5グリッドをうっすら表示）
-            for i in range(1, 5):
-                # 垂直線
-                vx = sz_x_min + (sz_x_max - sz_x_min) * (i / 5)
-                fig_catcher.add_shape(type="line", x0=vx, x1=vx, y0=sz_y_min, y1=sz_y_max, line=dict(color="rgba(255,255,255,0.2)", width=1))
-                # 水平線
-                vy = sz_y_min + (sz_y_max - sz_y_min) * (i / 5)
-                fig_catcher.add_shape(type="line", x0=sz_x_min, x1=sz_x_max, y0=vy, y1=vy, line=dict(color="rgba(255,255,255,0.2)", width=1))
-
             if not vdf.empty:
                 plot_data = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
-                # StrikeZoneX/Yを捕手目線座標にマッピング（調整用係数）
                 for _, row in plot_data.iterrows():
                     val = row[target_metric]
                     dot_color, _ = get_color(val, target_metric)
+                    # 捕手目線用に座標をスケーリング
                     fig_catcher.add_trace(go.Scatter(
-                        x=[row['StrikeZoneX'] * 1.6], # 左右の広がり調整
-                        y=[row['StrikeZoneY'] + 20],   # 高さのオフセット調整
+                        x=[row['StrikeZoneX'] * 1.6], 
+                        y=[row['StrikeZoneY'] + 20], 
                         mode='markers',
                         marker=dict(size=16, color=dot_color, line=dict(width=1.5, color="white")),
-                        text=f"{target_metric}: {val}",
-                        hoverinfo='text',
-                        showlegend=False
+                        text=f"{target_metric}: {val}", hoverinfo='text', showlegend=False
                     ))
 
-            fig_catcher.update_layout(
-                width=800, height=600,
-                xaxis=dict(range=[-100, 100], visible=False, fixedrange=True),
-                yaxis=dict(range=[-10, 160], visible=False, fixedrange=True),
-                margin=dict(l=0, r=0, t=10, b=0),
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
-            )
-            
+            fig_catcher.update_layout(width=900, height=550, xaxis=dict(range=[-100, 100], visible=False), yaxis=dict(range=[-10, 160], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_catcher, use_container_width=True)
+
             st.dataframe(vdf)
