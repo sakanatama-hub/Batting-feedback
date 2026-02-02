@@ -56,7 +56,7 @@ def get_color(val, metric_name):
 
 # --- UI ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
-st.markdown("<style>.stApp { background-color: #0E1117; }</style>", unsafe_allow_html=True)
+st.markdown("<style>.stApp { background-color: #0E1117; color: white; }</style>", unsafe_allow_html=True)
 
 if "ok" not in st.session_state: st.session_state["ok"] = False
 
@@ -81,26 +81,32 @@ else:
                 pdf['Date_Only'] = pd.to_datetime(pdf['DateTime']).dt.date
                 with c2: target_date = st.selectbox("日付を選択", sorted(pdf['Date_Only'].unique(), reverse=True))
                 vdf = pdf[pdf['Date_Only'] == target_date].copy()
+                
                 metrics = [c for c in vdf.select_dtypes(include=[np.number]).columns if "StrikeZone" not in c]
+                if not metrics: metrics = ["Swing Speed"]
                 with c3: target_metric = st.selectbox("分析指標", metrics)
 
-                # --- 1. 25分割コース別平均（ヒートマップ） ---
+                # --- 1. 25分割コース別平均（5x5 ヒートマップ） ---
                 st.subheader(f"📊 {target_metric}：コース別平均 (25分割)")
                 
-                # 座標(X:-35~35, Y:35~115)を5等分するロジック
+                # 座標(X:-35~35, Y:35~115)を5等分する
                 def get_5x5_zone(x, y):
                     xi = int(min(max((x + 35) / 14, 0), 4)) + 1
                     yi = int(min(max((y - 35) / 16, 0), 4)) + 1
                     return xi, yi
 
-                vdf['zx5'], vdf['zy5'] = zip(*vdf.apply(lambda r: get_5x5_zone(r['StrikeZoneX'], r['StrikeZoneY']), axis=1))
+                # データがある場合のみ計算
+                if not vdf.empty:
+                    res = vdf.apply(lambda r: get_5x5_zone(r['StrikeZoneX'], r['StrikeZoneY']), axis=1)
+                    vdf['zx5'] = [r[0] for r in res]
+                    vdf['zy5'] = [r[1] for r in res]
                 
                 zones = []
                 for y_idx in range(5, 0, -1):
                     row_data = []
                     for x_idx in range(1, 6):
                         logic_x = x_idx if hand == "右" else (6 - x_idx)
-                        avg_val = vdf[(vdf['zx5'] == logic_x) & (vdf['zy5'] == y_idx)][target_metric].mean()
+                        avg_val = vdf[(vdf['zx5'] == logic_x) & (vdf['zy5'] == y_idx)][target_metric].mean() if not vdf.empty else 0
                         row_data.append(avg_val if pd.notnull(avg_val) else 0.0)
                     zones.append(row_data)
 
@@ -108,20 +114,14 @@ else:
                     z=zones,
                     x=['IN 5', '4', '3', '2', 'OUT 1'] if hand == "右" else ['OUT 1', '2', '3', '4', 'IN 5'],
                     y=['HIGH 5', '4', '3', '2', 'LOW 1'],
-                    colorscale='Magma', # 以前のダーク背景に映えるデザイン
+                    colorscale='Magma',
                     text=[[f"{v:.1f}" if v != 0 else "" for v in row] for row in zones],
                     texttemplate="%{text}",
                     textfont={"size": 14, "color": "white"},
-                    xgap=2, ygap=2,
-                    showscale=True
+                    xgap=2, ygap=2, showscale=True
                 ))
-                fig_heat.update_layout(
-                    width=600, height=550,
-                    yaxis=dict(autorange="reversed"),
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    font=dict(color="white")
-                )
+                fig_heat.update_layout(width=600, height=500, yaxis=dict(autorange="reversed"),
+                                    paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"))
                 st.plotly_chart(fig_heat, use_container_width=True)
 
                 # --- 2. インパクトポイント（シルエット版） ---
@@ -142,11 +142,14 @@ else:
                 
                 fig_point.add_shape(type="rect", x0=sx_min, x1=sx_max, y0=sy_min, y1=sy_max, line=dict(color="rgba(255,255,255,0.8)", width=4))
                 
-                valid_data = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY'])
-                for _, row in valid_data.iterrows():
-                    val = row[target_metric]
-                    dot_color, _ = get_color(val, target_metric)
-                    fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX'] * sc], y=[row['StrikeZoneY'] + y_off], mode='markers', marker=dict(size=12, color=dot_color, line=dict(width=1, color="white")), text=f"{val}", hoverinfo='text', showlegend=False))
+                if not vdf.empty:
+                    valid_data = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY'])
+                    for _, row in valid_data.iterrows():
+                        val = row[target_metric]
+                        dot_color, _ = get_color(val, target_metric)
+                        fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX'] * sc], y=[row['StrikeZoneY'] + y_off], mode='markers', marker=dict(size=12, color=dot_color, line=dict(width=1, color="white")), text=f"{val}", hoverinfo='text', showlegend=False))
                 
-                fig_point.update_layout(width=800, height=550, xaxis=dict(range=[-150, 150], visible=False), yaxis=dict(range=[-20, 240], visible=False), margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                fig_point.update_layout(width=800, height=550, xaxis=dict(range=[-150, 150], visible=False), yaxis=dict(range=[-20, 240], visible=False), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_point, use_container_width=True)
+            else:
+                st.warning("この選手のデータはまだ登録されていません。")
