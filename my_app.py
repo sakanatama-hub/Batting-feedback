@@ -81,7 +81,7 @@ else:
             # ---------------------------------
             st.subheader(f"📊 {target_metric}：コース別平均")
             fig_heat = go.Figure()
-            # 俯瞰図の背景
+            # 俯瞰図の背景（以前の最高な設定を維持）
             fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
             L_x, L_y, R_x, R_y, Outer_x, Outer_y = 125, 140, -125, 140, 450, 600
             fig_heat.add_shape(type="path", path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
@@ -124,23 +124,30 @@ else:
             st.plotly_chart(fig_heat, use_container_width=True)
 
             # ---------------------------------
-            # 2. 打撃位置（捕手目線：はみ出し対策版）
+            # 2. 打撃位置（捕手目線：9分割ガイド追加）
             # ---------------------------------
             st.subheader(f"📍 {target_metric}：インパクトポイント")
             fig_catcher = go.Figure()
-            # 背景（土色）をさらに広く
+            # 背景（土色）
             fig_catcher.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=200, fillcolor="#8B4513", line_width=0, layer="below")
             # ホームベース
             fig_catcher.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
             
-            # 【修正】ストライクゾーンの四角を少し小さく表示（スケーリング）
-            # データが飛び出さないよう、プロット用の倍率を少し下げました
             scale_factor = 1.2 
             y_offset = 40
             
-            # ストライクゾーンの枠
+            # ストライクゾーンの枠（太線）
             sz_x_min, sz_x_max, sz_y_min, sz_y_max = -35, 35, 35, 115
             fig_catcher.add_shape(type="rect", x0=sz_x_min, x1=sz_x_max, y0=sz_y_min, y1=sz_y_max, line=dict(color="rgba(255,255,255,0.8)", width=4))
+
+            # 【追加】9分割ガイドライン（薄い線）
+            # 垂直線（左右1/3ずつ）
+            for i in range(1, 3):
+                vx = sz_x_min + (sz_x_max - sz_x_min) * (i / 3)
+                fig_catcher.add_shape(type="line", x0=vx, x1=vx, y0=sz_y_min, y1=sz_y_max, line=dict(color="rgba(255,255,255,0.3)", width=1.5, dash="dot"))
+            # 水平線（上下1/3ずつ）
+                vy = sz_y_min + (sz_y_max - sz_y_min) * (i / 3)
+                fig_catcher.add_shape(type="line", x0=sz_x_min, x1=sz_x_max, y0=vy, y1=vy, line=dict(color="rgba(255,255,255,0.3)", width=1.5, dash="dot"))
 
             if not vdf.empty:
                 plot_data = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
@@ -155,7 +162,6 @@ else:
                         text=f"{target_metric}: {val}", hoverinfo='text', showlegend=False
                     ))
 
-            # グラフの表示範囲をさらに広げて「外れた球」も見えるように
             fig_catcher.update_layout(width=900, height=550, xaxis=dict(range=[-120, 120], visible=False, fixedrange=True), yaxis=dict(range=[-20, 180], visible=False, fixedrange=True), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_catcher, use_container_width=True)
 
