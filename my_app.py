@@ -28,28 +28,47 @@ def load_data_from_github():
     except:
         return pd.DataFrame()
 
-# --- 新しい色分け定義 ---
-def get_color(val):
+# --- 色分けの定義 ---
+def get_color(val, metric_name):
     if val == 0:
-        return "rgba(255, 255, 255, 0.1)"
+        return "rgba(255, 255, 255, 0.1)", "white"
     
-    base = 105
-    diff = val - base
-    
-    # 変化の感度調整（30の差で最大濃度になる設定）
-    sensitivity = 30 
-    intensity = min(abs(diff) / sensitivity, 1.0)
-    
-    if diff > 0:
-        # 105より大きい：白(255,255,255) -> 赤(255,0,0)
-        # diffが大きくなるほど、GreenとBlueを減らす
-        gb_val = int(255 * (1 - intensity))
-        return f"rgba(255, {gb_val}, {gb_val}, 0.9)"
+    # 指標が「角度」または「スイング」に関連する場合（アッパー角度用）
+    if "角度" in metric_name or "Swing" in metric_name or "Attack" in metric_name:
+        base = 10.5
+        diff = val - base
+        sensitivity = 15 # 25.5度以上で真青、-4.5度以下で真緑
+        intensity = min(abs(diff) / sensitivity, 1.0)
+        
+        if diff > 0:
+            # 10.5より大きい：白 -> 青 (0, 0, 255)
+            rg_val = int(255 * (1 - intensity))
+            color = f"rgba({rg_val}, {rg_val}, 255, 0.9)"
+        else:
+            # 10.5より小さい：白 -> 緑 (0, 255, 0)
+            rb_val = int(255 * (1 - intensity))
+            color = f"rgba({rb_val}, 255, {rb_val}, 0.9)"
+        
+        # 文字色の判定（色が薄いときは黒、濃いときは白）
+        font_color = "black" if intensity < 0.4 else "white"
+        return color, font_color
+
+    # それ以外の指標（前回の105基準：赤・青）
     else:
-        # 105より小さい：白(255,255,255) -> 青(0,0,255)
-        # diffが小さくなるほど、RedとGreenを減らす
-        rg_val = int(255 * (1 - intensity))
-        return f"rgba({rg_val}, {rg_val}, 255, 0.9)"
+        base = 105
+        diff = val - base
+        sensitivity = 30 
+        intensity = min(abs(diff) / sensitivity, 1.0)
+        
+        if diff > 0:
+            gb_val = int(255 * (1 - intensity))
+            color = f"rgba(255, {gb_val}, {gb_val}, 0.9)"
+        else:
+            rg_val = int(255 * (1 - intensity))
+            color = f"rgba({rg_val}, {rg_val}, 255, 0.9)"
+            
+        font_color = "black" if intensity < 0.4 else "white"
+        return color, font_color
 
 # --- 認証 ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
@@ -88,7 +107,6 @@ else:
             
             # --- フィールドパーツ ---
             L_x, L_y, R_x, R_y, Outer_x, Outer_y = 125, 140, -125, 140, 450, 600
-            
             fig.add_shape(type="path", path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
             fig.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
             fig.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
@@ -123,13 +141,14 @@ else:
                         y1 = z_y_start + (5 - r) * grid_side_y; y0 = y1 - grid_side_y
                         val = display_grid[r, c]
                         
-                        color = get_color(val)
+                        # 指標名と値に基づいて色と文字色を決定
+                        color, f_color = get_color(val, target_metric)
                         
                         fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, 
                                       fillcolor=color, line=dict(color="#222", width=1.5))
                         if val > 0:
                             fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=str(round(val,1)),
-                                               showarrow=False, font=dict(size=22, color="black" if 95 < val < 115 else "white", weight="bold"))
+                                               showarrow=False, font=dict(size=22, color=f_color, weight="bold"))
 
             # 真ん中9マスの赤枠
             fig.add_shape(type="rect", x0=z_x_start + grid_side_x, x1=z_x_start + 4*grid_side_x, 
