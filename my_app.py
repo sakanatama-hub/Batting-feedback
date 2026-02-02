@@ -77,11 +77,11 @@ else:
             with c3: target_metric = st.selectbox("分析指標", metrics if metrics else ["データなし"])
 
             # ---------------------------------
-            # 1. コース別平均（スタジアム俯瞰ヒートマップ）
+            # 1. コース別平均（俯瞰ヒートマップ）
             # ---------------------------------
-            st.subheader(f"📊 {target_metric}：コース別平均（フィールド俯瞰）")
+            st.subheader(f"📊 {target_metric}：コース別平均")
             fig_heat = go.Figure()
-            # 俯瞰図の背景描画
+            # 俯瞰図の背景
             fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
             L_x, L_y, R_x, R_y, Outer_x, Outer_y = 125, 140, -125, 140, 450, 600
             fig_heat.add_shape(type="path", path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
@@ -93,7 +93,6 @@ else:
             fig_heat.add_shape(type="line", x0=L_x, y0=L_y, x1=Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
             fig_heat.add_shape(type="line", x0=R_x, y0=R_y, x1=-Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
 
-            # 25分割グリッドの設定
             grid_side = 55
             z_x_start, z_y_start = -(grid_side * 2.5), 180 
 
@@ -120,39 +119,44 @@ else:
                             txt = str(round(val,3)) if "時間" in target_metric else str(round(val,1))
                             fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=22, color=f_color, weight="bold"))
 
-            # 真ん中赤枠
             fig_heat.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="#ff2222", width=6))
             fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_heat, use_container_width=True)
 
             # ---------------------------------
-            # 2. 打撃位置（捕手目線インパクトポイント）
+            # 2. 打撃位置（捕手目線：はみ出し対策版）
             # ---------------------------------
-            st.subheader(f"📍 {target_metric}：インパクトポイント（捕手目線）")
+            st.subheader(f"📍 {target_metric}：インパクトポイント")
             fig_catcher = go.Figure()
-            # 背景（土色）
-            fig_catcher.add_shape(type="rect", x0=-100, x1=100, y0=-20, y1=150, fillcolor="#8B4513", line_width=0, layer="below")
+            # 背景（土色）をさらに広く
+            fig_catcher.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=200, fillcolor="#8B4513", line_width=0, layer="below")
             # ホームベース
-            fig_catcher.add_shape(type="path", path="M -30 10 L 30 10 L 30 5 L 0 0 L -30 5 Z", fillcolor="white", line=dict(color="#444", width=2))
-            # ストライクゾーン
-            sz_x_min, sz_x_max, sz_y_min, sz_y_max = -48, 48, 30, 120
-            fig_catcher.add_shape(type="rect", x0=sz_x_min, x1=sz_x_max, y0=sz_y_min, y1=sz_y_max, line=dict(color="rgba(255,255,255,0.8)", width=4))
+            fig_catcher.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
             
+            # 【修正】ストライクゾーンの四角を少し小さく表示（スケーリング）
+            # データが飛び出さないよう、プロット用の倍率を少し下げました
+            scale_factor = 1.2 
+            y_offset = 40
+            
+            # ストライクゾーンの枠
+            sz_x_min, sz_x_max, sz_y_min, sz_y_max = -35, 35, 35, 115
+            fig_catcher.add_shape(type="rect", x0=sz_x_min, x1=sz_x_max, y0=sz_y_min, y1=sz_y_max, line=dict(color="rgba(255,255,255,0.8)", width=4))
+
             if not vdf.empty:
                 plot_data = vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric])
                 for _, row in plot_data.iterrows():
                     val = row[target_metric]
                     dot_color, _ = get_color(val, target_metric)
-                    # 捕手目線用に座標をスケーリング
                     fig_catcher.add_trace(go.Scatter(
-                        x=[row['StrikeZoneX'] * 1.6], 
-                        y=[row['StrikeZoneY'] + 20], 
+                        x=[row['StrikeZoneX'] * scale_factor], 
+                        y=[row['StrikeZoneY'] + y_offset], 
                         mode='markers',
-                        marker=dict(size=16, color=dot_color, line=dict(width=1.5, color="white")),
+                        marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")),
                         text=f"{target_metric}: {val}", hoverinfo='text', showlegend=False
                     ))
 
-            fig_catcher.update_layout(width=900, height=550, xaxis=dict(range=[-100, 100], visible=False), yaxis=dict(range=[-10, 160], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            # グラフの表示範囲をさらに広げて「外れた球」も見えるように
+            fig_catcher.update_layout(width=900, height=550, xaxis=dict(range=[-120, 120], visible=False, fixedrange=True), yaxis=dict(range=[-20, 180], visible=False, fixedrange=True), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_catcher, use_container_width=True)
 
             st.dataframe(vdf)
