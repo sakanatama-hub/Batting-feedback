@@ -33,31 +33,28 @@ def get_color(val, metric_name):
     if val == 0:
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # 1. スイング時間 (0.15白, 0.10赤, 大=青)
     if "スイング時間" in metric_name:
         base, sensitivity = 0.15, 0.05
         diff = val - base
         intensity = min(abs(diff) / sensitivity, 1.0)
-        if diff < 0: color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" # 赤
-        else: color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)" # 青
+        if diff < 0: color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" 
+        else: color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)" 
         return color, ("black" if intensity < 0.4 else "white")
 
-    # 2. アッパースイング度 (10.5白, 大=青, 小=緑)
     elif "アッパースイング度" in metric_name:
         base, sensitivity = 10.5, 15
         diff = val - base
         intensity = min(abs(diff) / sensitivity, 1.0)
-        if diff > 0: color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)" # 青
-        else: color = f"rgba({int(255*(1-intensity))}, 255, {int(255*(1-intensity))}, 0.9)" # 緑
+        if diff > 0: color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)" 
+        else: color = f"rgba({int(255*(1-intensity))}, 255, {int(255*(1-intensity))}, 0.9)" 
         return color, ("black" if intensity < 0.4 else "white")
 
-    # 3. その他 (105白, 大=赤, 小=青)
     else:
         base, sensitivity = 105, 30
         diff = val - base
         intensity = min(abs(diff) / sensitivity, 1.0)
-        if diff > 0: color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" # 赤
-        else: color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)" # 青
+        if diff > 0: color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" 
+        else: color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)" 
         return color, ("black" if intensity < 0.4 else "white")
 
 # --- メイン表示 ---
@@ -75,7 +72,7 @@ else:
     db_df = load_data_from_github()
     st.title("🔵 選手別・コース別分析")
 
-    _, center_col, _ = st.columns([0.1, 8, 0.1])
+    _, center_col, _ = st.columns([0.05, 9.9, 0.05]) # メインカラムを広く
 
     with center_col:
         c1, c2, c3 = st.columns([2, 2, 3])
@@ -93,6 +90,7 @@ else:
 
             # --- 背景とフィールド描画 ---
             fig.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
+            # ライン始点とバッターボックスの座標を微調整
             L_x, L_y, R_x, R_y, Outer_x, Outer_y = 125, 140, -125, 140, 450, 600
             fig.add_shape(type="path", path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
             fig.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
@@ -103,8 +101,8 @@ else:
             fig.add_shape(type="line", x0=L_x, y0=L_y, x1=Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
             fig.add_shape(type="line", x0=R_x, y0=R_y, x1=-Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
 
-            # --- グリッド描画 ---
-            grid_side = 45
+            # --- グリッド描画 (サイズ拡大) ---
+            grid_side = 60 # 45から拡大
             z_x_start, z_y_start = -(grid_side * 2.5), 180 
             
             if target_metric != "データなし":
@@ -128,9 +126,9 @@ else:
                         fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1.5))
                         if val > 0:
                             txt = str(round(val,3)) if "時間" in target_metric else str(round(val,1))
-                            fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=20, color=f_color, weight="bold"))
+                            fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=24, color=f_color, weight="bold"))
 
-                # --- カラーバー（凡例）の追加 ---
+                # --- カラーバー（凡例） ---
                 if "スイング時間" in target_metric:
                     colorscale = [[0, "red"], [0.5, "white"], [1, "blue"]]
                     zmin, zmax, tickvals = 0.10, 0.20, [0.10, 0.15, 0.20]
@@ -145,8 +143,11 @@ else:
                     x=[None], y=[None], mode='markers',
                     marker=dict(
                         colorscale=colorscale, cmin=zmin, cmax=zmax, showscale=True,
-                        colorbar=dict(title=dict(text=target_metric, font=dict(size=14, color="white")),
-                                     tickvals=tickvals, tickfont=dict(color="white"), thickness=20, x=1.02)
+                        colorbar=dict(
+                            title=dict(text="基準", font=dict(size=14, color="white")),
+                            tickvals=tickvals, tickfont=dict(color="white"),
+                            thickness=15, x=0.9, xpad=0 # xの位置を内側に
+                        )
                     ),
                     showlegend=False
                 ))
@@ -155,10 +156,10 @@ else:
             fig.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="#ff2222", width=8))
 
             fig.update_layout(
-                width=1100, height=700,
-                xaxis=dict(range=[-350, 450], visible=False, fixedrange=True), # 幅を少し広げてバーを収める
-                yaxis=dict(range=[-40, 500], visible=False, fixedrange=True),
-                margin=dict(l=0, r=50, t=10, b=0),
+                width=1000, height=800, # 高さを少し出して縦長に
+                xaxis=dict(range=[-300, 300], visible=False, fixedrange=True), # 左右を絞って中央を強調
+                yaxis=dict(range=[-40, 550], visible=False, fixedrange=True),
+                margin=dict(l=0, r=0, t=10, b=0),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
             )
             
