@@ -11,13 +11,13 @@ GITHUB_REPO = "Batting-feedback"
 GITHUB_FILE_PATH = "data.csv"
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 
-# 選手と打席の定義（ここを一度設定すれば自動化されます）
+# 選手ごとの打席定義を完全に反映
 PLAYER_HANDS = {
     "#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", 
     "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", 
     "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", 
-    "#10 福井 章吾": "左", "#22 高祖 健輔": "右", "#23 箱山 遥人": "右", 
-    "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "右", "#27 小畑 尋規": "右", 
+    "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", 
+    "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", 
     "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", 
     "#99 尾瀬 雄大": "左"
 }
@@ -72,7 +72,7 @@ else:
     with center_col:
         c1, c2, c3 = st.columns([2, 2, 3])
         with c1: target_player = st.selectbox("選手を選択", PLAYERS)
-        hand = PLAYER_HANDS[target_player] # 打席を自動取得
+        hand = PLAYER_HANDS[target_player] 
         
         pdf = db_df[db_df['Player Name'] == target_player].copy()
         
@@ -85,9 +85,7 @@ else:
 
             st.write(f"**現在の設定:** {target_player} ({hand}打席)")
 
-            # ---------------------------------
-            # 1. コース別平均（俯瞰ヒートマップ）
-            # ---------------------------------
+            # 1. コース別平均（ヒートマップ）
             st.subheader(f"📊 {target_metric}：コース別平均")
             fig_heat = go.Figure()
             fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
@@ -125,7 +123,6 @@ else:
                             txt = str(round(val,3)) if "時間" in target_metric else str(round(val,1))
                             fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=22, color=f_color, weight="bold"))
 
-                # カラーバー設定
                 if "スイング時間" in target_metric:
                     c_scale, zm, zM, tv = [[0, "red"], [0.5, "white"], [1, "blue"]], 0.10, 0.20, [0.10, 0.15, 0.20]
                 elif "アッパースイング度" in target_metric:
@@ -138,9 +135,7 @@ else:
             fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_heat, use_container_width=True)
 
-            # ---------------------------------
-            # 2. 打撃位置（捕手目線：打者シルエット自動）
-            # ---------------------------------
+            # 2. インパクトポイント（打者シルエット自動）
             st.subheader(f"📍 {target_metric}：インパクトポイント")
             fig_point = go.Figure()
             fig_point.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=200, fillcolor="#8B4513", line_width=0, layer="below")
@@ -149,12 +144,10 @@ else:
             sc, y_off = 1.2, 40
             sx_min, sx_max, sy_min, sy_max = -35, 35, 35, 115
             
-            # 打席シルエット自動配置
             bx = 75 if hand == "左" else -75
             fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=140, fillcolor="rgba(200,200,200,0.4)", line_width=0)
             fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=145, y1=175, fillcolor="rgba(200,200,200,0.4)", line_width=0)
             
-            # 9分割ストライクゾーン
             fig_point.add_shape(type="rect", x0=sx_min, x1=sx_max, y0=sy_min, y1=sy_max, line=dict(color="rgba(255,255,255,0.8)", width=4))
             for i in range(1, 3):
                 vx = sx_min + (sx_max - sx_min) * (i / 3)
