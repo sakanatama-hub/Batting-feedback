@@ -72,7 +72,7 @@ else:
     db_df = load_data_from_github()
     st.title("🔵 選手別・コース別分析")
 
-    _, center_col, _ = st.columns([0.05, 9.9, 0.05]) # メインカラムを広く
+    _, center_col, _ = st.columns([0.1, 8.5, 0.1]) 
 
     with center_col:
         c1, c2, c3 = st.columns([2, 2, 3])
@@ -90,7 +90,6 @@ else:
 
             # --- 背景とフィールド描画 ---
             fig.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
-            # ライン始点とバッターボックスの座標を微調整
             L_x, L_y, R_x, R_y, Outer_x, Outer_y = 125, 140, -125, 140, 450, 600
             fig.add_shape(type="path", path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
             fig.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
@@ -101,8 +100,8 @@ else:
             fig.add_shape(type="line", x0=L_x, y0=L_y, x1=Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
             fig.add_shape(type="line", x0=R_x, y0=R_y, x1=-Outer_x, y1=Outer_y, line=dict(color="white", width=7), layer="below")
 
-            # --- グリッド描画 (サイズ拡大) ---
-            grid_side = 60 # 45から拡大
+            # --- グリッド描画 (サイズ再微調整) ---
+            grid_side = 55 # PC・モバイル両対応のバランスサイズ
             z_x_start, z_y_start = -(grid_side * 2.5), 180 
             
             if target_metric != "データなし":
@@ -126,7 +125,7 @@ else:
                         fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1.5))
                         if val > 0:
                             txt = str(round(val,3)) if "時間" in target_metric else str(round(val,1))
-                            fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=24, color=f_color, weight="bold"))
+                            fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=22, color=f_color, weight="bold"))
 
                 # --- カラーバー（凡例） ---
                 if "スイング時間" in target_metric:
@@ -144,21 +143,21 @@ else:
                     marker=dict(
                         colorscale=colorscale, cmin=zmin, cmax=zmax, showscale=True,
                         colorbar=dict(
-                            title=dict(text="基準", font=dict(size=14, color="white")),
-                            tickvals=tickvals, tickfont=dict(color="white"),
-                            thickness=15, x=0.9, xpad=0 # xの位置を内側に
+                            title=dict(text="基準", font=dict(size=12, color="white")),
+                            tickvals=tickvals, tickfont=dict(color="white", size=10),
+                            thickness=12, x=0.92, xpad=0
                         )
                     ),
                     showlegend=False
                 ))
 
             # 真ん中赤枠
-            fig.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="#ff2222", width=8))
+            fig.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="#ff2222", width=6))
 
             fig.update_layout(
-                width=1000, height=800, # 高さを少し出して縦長に
-                xaxis=dict(range=[-300, 300], visible=False, fixedrange=True), # 左右を絞って中央を強調
-                yaxis=dict(range=[-40, 550], visible=False, fixedrange=True),
+                width=900, height=650, # PC画面で収まりやすいサイズに
+                xaxis=dict(range=[-320, 320], visible=False, fixedrange=True),
+                yaxis=dict(range=[-40, 520], visible=False, fixedrange=True),
                 margin=dict(l=0, r=0, t=10, b=0),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
             )
