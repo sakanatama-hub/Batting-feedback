@@ -33,26 +33,44 @@ def get_color(val, metric_name):
     if val == 0:
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # 【修正】アッパースイング度用のロジック
-    if "アッパースイング度" in metric_name:
+    # 1. スイング時間用のロジック
+    if "スイング時間" in metric_name:
+        base = 0.15
+        diff = val - base # 例: 0.10 - 0.15 = -0.05
+        # 0.05の差で最大濃度になるように設定
+        sensitivity = 0.05
+        intensity = min(abs(diff) / sensitivity, 1.0)
+        
+        if diff < 0:
+            # 0.15より小さい（0.10に近づく）：白 -> 赤 (255, 0, 0)
+            gb_val = int(255 * (1 - intensity))
+            color = f"rgba(255, {gb_val}, {gb_val}, 0.9)"
+        else:
+            # 0.15より大きい：白 -> 青 (0, 0, 255)
+            rg_val = int(255 * (1 - intensity))
+            color = f"rgba({rg_val}, {rg_val}, 255, 0.9)"
+        
+        font_color = "black" if intensity < 0.4 else "white"
+        return color, font_color
+
+    # 2. アッパースイング度用のロジック
+    elif "アッパースイング度" in metric_name:
         base = 10.5
         diff = val - base
-        sensitivity = 15  # 変化の幅（適宜調整してください）
+        sensitivity = 15
         intensity = min(abs(diff) / sensitivity, 1.0)
         
         if diff > 0:
-            # 10.5より大きい：白 -> 青 (0, 0, 255)
             rg_val = int(255 * (1 - intensity))
             color = f"rgba({rg_val}, {rg_val}, 255, 0.9)"
         else:
-            # 10.5より小さい：白 -> 緑 (0, 255, 0)
             rb_val = int(255 * (1 - intensity))
             color = f"rgba({rb_val}, 255, {rb_val}, 0.9)"
         
         font_color = "black" if intensity < 0.4 else "white"
         return color, font_color
 
-    # それ以外の指標（105基準：赤・青）
+    # 3. それ以外の指標（105基準：赤・青）
     else:
         base = 105
         diff = val - base
@@ -60,11 +78,9 @@ def get_color(val, metric_name):
         intensity = min(abs(diff) / sensitivity, 1.0)
         
         if diff > 0:
-            # 105より大きい：白 -> 赤
             gb_val = int(255 * (1 - intensity))
             color = f"rgba(255, {gb_val}, {gb_val}, 0.9)"
         else:
-            # 105より小さい：白 -> 青
             rg_val = int(255 * (1 - intensity))
             color = f"rgba({rg_val}, {rg_val}, 255, 0.9)"
             
@@ -147,7 +163,9 @@ else:
                         fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, 
                                       fillcolor=color, line=dict(color="#222", width=1.5))
                         if val > 0:
-                            fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=str(round(val,1)),
+                            # スイング時間の場合は小数点3桁まで表示
+                            txt = str(round(val,3)) if "時間" in target_metric else str(round(val,1))
+                            fig.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt,
                                                showarrow=False, font=dict(size=22, color=f_color, weight="bold"))
 
             # 真ん中9マスの赤枠
