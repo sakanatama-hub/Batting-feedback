@@ -98,7 +98,6 @@ else:
                 with c3: target_metric = st.selectbox("分析指標", metrics if metrics else ["データなし"], key="m_tab1")
 
                 if not vdf.empty:
-                    # コース別平均（野球場デザイン）
                     st.subheader(f"📊 {target_metric}：期間内平均")
                     fig_heat = go.Figure()
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
@@ -133,11 +132,9 @@ else:
                                 txt = f"{val:.3f}" if "時間" in target_metric else f"{val:.1f}"
                                 fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=18, color=f_color, weight="bold"))
                     
-                    fig_heat.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="#ff2222", width=6))
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # 📍 インパクトポイント
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=200, fillcolor="#8B4513", line_width=0, layer="below")
@@ -161,7 +158,6 @@ else:
             all_metrics = [c for c in db_df.select_dtypes(include=[np.number]).columns if "Zone" not in c]
             comp_metric = st.selectbox("比較する指標を選択", all_metrics, key="m_tab2")
             
-            # 指標に基づいて上位3名を抽出
             ascending_flag = ("スイング時間" in comp_metric)
             top3_names = db_df.groupby('Player Name')[comp_metric].mean().sort_values(ascending=ascending_flag).head(3).index.tolist()
             
@@ -172,7 +168,6 @@ else:
                     p_data = db_df[db_df['Player Name'] == name]
                     grid = np.zeros((3, 3)); counts = np.zeros((3, 3))
                     
-                    # 3x3集計
                     for _, row in p_data.dropna(subset=['StrikeZoneX', 'StrikeZoneY', comp_metric]).iterrows():
                         c = 0 if row['StrikeZoneX'] < -9.6 else 1 if row['StrikeZoneX'] <= 9.6 else 2
                         r = 0 if row['StrikeZoneY'] > 88.3 else 1 if row['StrikeZoneY'] > 66.6 else 2
@@ -182,17 +177,33 @@ else:
                     hand_label = PLAYER_HANDS[name]
                     x_labels = ['内', '中', '外'] if hand_label == "右" else ['外', '中', '内']
                     
+                    # カラースケールの設定
+                    is_time = "スイング時間" in comp_metric
+                    c_scale = 'RdBu' if is_time else 'Blues'
+                    
                     fig = go.Figure(data=go.Heatmap(
                         z=avg_grid, x=x_labels, y=['高', '中', '低'],
-                        colorscale='RdBu' if "時間" in comp_metric else 'Blues',
-                        reversescale=True if "時間" in comp_metric else False, showscale=False
+                        colorscale=c_scale,
+                        reversescale=True if is_time else False, showscale=False
                     ))
+                    
+                    # マスの最大値・最小値を取得して文字色判定に使用
+                    max_val = avg_grid.max()
+                    min_val = avg_grid[avg_grid > 0].min() if any(avg_grid > 0) else 0
                     
                     for r in range(3):
                         for c in range(3):
-                            if avg_grid[r, c] > 0:
-                                txt = f"{avg_grid[r, c]:.3f}" if "時間" in comp_metric else f"{avg_grid[r, c]:.1f}"
-                                fig.add_annotation(x=c, y=r, text=txt, showarrow=False, font=dict(color="white" if avg_grid[r, c] > (avg_grid.max()*0.5) else "black", weight="bold"))
+                            val = avg_grid[r, c]
+                            if val > 0:
+                                # 💡 文字色ロジックの改善: 背景色が濃い(端に近い)場合は白、薄い場合は黒
+                                # スイング時間の場合は小さいほど濃い(赤)、速度などの場合は大きいほど濃い(青)
+                                if is_time:
+                                    font_color = "white" if val < (min_val + (max_val - min_val) * 0.3) else "black"
+                                else:
+                                    font_color = "white" if val > (min_val + (max_val - min_val) * 0.7) else "black"
+                                
+                                txt = f"{val:.3f}" if is_time else f"{val:.1f}"
+                                fig.add_annotation(x=c, y=r, text=txt, showarrow=False, font=dict(color=font_color, weight="bold"))
 
                     fig.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), xaxis=dict(side="top"))
                     st.plotly_chart(fig, use_container_width=True)
@@ -207,8 +218,6 @@ else:
         if uploaded_file is not None:
             try:
                 input_df = pd.read_excel(uploaded_file)
-                st.write("📋 読み込みデータプレビュー:")
-                st.dataframe(input_df.head())
                 if st.button("GitHubへ保存"):
                     input_df['Player Name'] = reg_player
                     input_df['DateTime'] = reg_date.strftime('%Y-%m-%d')
