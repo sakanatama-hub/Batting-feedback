@@ -47,7 +47,8 @@ def get_color(val, metric_name):
         base, sensitivity = 105, 30
         diff = val - base
         intensity = min(abs(diff) / sensitivity, 1.0)
-        color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff > 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
+        color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff > 0 else f"rgba({int(255*(1-intensity))}, 255, {int(255*(1-intensity))}, 0.9)" # その他は赤/青
+        if diff < 0: color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
         return color, ("black" if intensity < 0.4 else "white")
 
 # --- メイン表示 ---
@@ -77,11 +78,11 @@ else:
             with c3: target_metric = st.selectbox("分析指標", metrics if metrics else ["データなし"])
 
             # ---------------------------------
-            # 1. コース別平均（俯瞰ヒートマップ）
+            # 1. コース別平均（俯瞰：カラーバー付き）
             # ---------------------------------
             st.subheader(f"📊 {target_metric}：コース別平均")
             fig_heat = go.Figure()
-            # 俯瞰図の背景（以前の最高な設定を維持）
+            # 俯瞰図の背景描画
             fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
             L_x, L_y, R_x, R_y, Outer_x, Outer_y = 125, 140, -125, 140, 450, 600
             fig_heat.add_shape(type="path", path=f"M {R_x} {R_y} L -{Outer_x} {Outer_y} L {Outer_x} {Outer_y} L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
@@ -119,33 +120,47 @@ else:
                             txt = str(round(val,3)) if "時間" in target_metric else str(round(val,1))
                             fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=22, color=f_color, weight="bold"))
 
+                # --- カラーバー（凡例）の追加 ---
+                if "スイング時間" in target_metric:
+                    colorscale = [[0, "red"], [0.5, "white"], [1, "blue"]]
+                    zmin, zmax, tickvals = 0.10, 0.20, [0.10, 0.15, 0.20]
+                elif "アッパースイング度" in target_metric:
+                    colorscale = [[0, "green"], [0.5, "white"], [1, "blue"]]
+                    zmin, zmax, tickvals = -4.5, 25.5, [-4.5, 10.5, 25.5]
+                else:
+                    colorscale = [[0, "blue"], [0.5, "white"], [1, "red"]]
+                    zmin, zmax, tickvals = 75, 105, 135
+
+                fig_heat.add_trace(go.Scatter(
+                    x=[None], y=[None], mode='markers',
+                    marker=dict(
+                        colorscale=colorscale, cmin=zmin, cmax=zmax, showscale=True,
+                        colorbar=dict(title=dict(text="基準", font=dict(size=12, color="white")),
+                                     tickvals=tickvals, tickfont=dict(color="white", size=10),
+                                     thickness=12, x=0.92, xpad=0)
+                    ),
+                    showlegend=False
+                ))
+
             fig_heat.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="#ff2222", width=6))
             fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_heat, use_container_width=True)
 
             # ---------------------------------
-            # 2. 打撃位置（捕手目線：9分割ガイド追加）
+            # 2. 打撃位置（捕手目線：9分割ガイド）
             # ---------------------------------
             st.subheader(f"📍 {target_metric}：インパクトポイント")
             fig_catcher = go.Figure()
-            # 背景（土色）
             fig_catcher.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=200, fillcolor="#8B4513", line_width=0, layer="below")
-            # ホームベース
             fig_catcher.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
             
-            scale_factor = 1.2 
-            y_offset = 40
-            
-            # ストライクゾーンの枠（太線）
+            scale_factor, y_offset = 1.2, 40
             sz_x_min, sz_x_max, sz_y_min, sz_y_max = -35, 35, 35, 115
             fig_catcher.add_shape(type="rect", x0=sz_x_min, x1=sz_x_max, y0=sz_y_min, y1=sz_y_max, line=dict(color="rgba(255,255,255,0.8)", width=4))
 
-            # 【追加】9分割ガイドライン（薄い線）
-            # 垂直線（左右1/3ずつ）
             for i in range(1, 3):
                 vx = sz_x_min + (sz_x_max - sz_x_min) * (i / 3)
                 fig_catcher.add_shape(type="line", x0=vx, x1=vx, y0=sz_y_min, y1=sz_y_max, line=dict(color="rgba(255,255,255,0.3)", width=1.5, dash="dot"))
-            # 水平線（上下1/3ずつ）
                 vy = sz_y_min + (sz_y_max - sz_y_min) * (i / 3)
                 fig_catcher.add_shape(type="line", x0=sz_x_min, x1=sz_x_max, y0=vy, y1=vy, line=dict(color="rgba(255,255,255,0.3)", width=1.5, dash="dot"))
 
@@ -162,7 +177,6 @@ else:
                         text=f"{target_metric}: {val}", hoverinfo='text', showlegend=False
                     ))
 
-            fig_catcher.update_layout(width=900, height=550, xaxis=dict(range=[-120, 120], visible=False, fixedrange=True), yaxis=dict(range=[-20, 180], visible=False, fixedrange=True), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            fig_catcher.update_layout(width=900, height=550, xaxis=dict(range=[-120, 120], visible=False), yaxis=dict(range=[-20, 180], visible=False), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_catcher, use_container_width=True)
-
             st.dataframe(vdf)
