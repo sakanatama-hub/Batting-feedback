@@ -267,7 +267,8 @@ else:
                         st.success(f"✅ {reg_player} 選手のデータを保存しました！")
                         st.rerun()
             except Exception as e:
-                st.error(f"❌ エラー: {e}")    else:
+                st.error(f"❌ エラー: {e}")    
+            else:
         color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff > 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
     f_color = "black" if intensity < 0.4 else "white"
     return color, f_color
