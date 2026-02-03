@@ -49,7 +49,6 @@ def save_to_github(new_df):
     
     save_df = new_df.copy()
     if 'DateTime' in save_df.columns:
-        # DateTime列を一度日付型に変換してから文字列フォーマットへ
         save_df['DateTime'] = pd.to_datetime(save_df['DateTime'], errors='coerce')
         save_df = save_df.dropna(subset=['DateTime'])
         save_df['DateTime'] = save_df['DateTime'].dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -108,7 +107,7 @@ else:
     db_df = load_data_from_github()
     tab1, tab2, tab3 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録"])
 
-    # --- TAB 1: 個人分析 ---
+    # --- TAB 1: 個人分析 (機能維持) ---
     with tab1:
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
@@ -116,14 +115,9 @@ else:
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
-                # DateTimeから日付のみ抽出。エラー値は除外
                 pdf['Date_Only'] = pd.to_datetime(pdf['DateTime'], errors='coerce').dt.date
                 pdf = pdf.dropna(subset=['Date_Only'])
-                
-                with c2: 
-                    min_d = pdf['Date_Only'].min()
-                    max_d = pdf['Date_Only'].max()
-                    date_range = st.date_input("分析期間", value=(min_d, max_d), key="range_tab1")
+                with c2: date_range = st.date_input("分析期間", value=(pdf['Date_Only'].min(), pdf['Date_Only'].max()), key="range_tab1")
                 with c3:
                     all_conds = pdf['スイング条件'].unique().tolist()
                     sel_conds = st.multiselect("打撃条件", all_conds, default=all_conds, key="cond_tab1")
@@ -171,7 +165,21 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-    # --- TAB 2: 比較分析 ---
+                    st.subheader(f"📍 {target_metric}：インパクトポイント")
+                    fig_point = go.Figure()
+                    fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
+                    fig_point.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
+                    bx = 75 if hand == "左" else -75
+                    fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=160, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
+                    for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
+                        dot_color, _ = get_color(row[target_metric], target_metric)
+                        fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX']], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
+                    fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_point, use_container_width=True)
+
+    # --- TAB 2: 比較分析 (トップ3の図だけ新デザインに) ---
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
@@ -190,6 +198,7 @@ else:
             top3_names = top3_series.index.tolist()
             top3_scores = top3_series.values.tolist()
             
+            # 2位, 1位, 3位 の順
             podium_order = [1, 0, 2] if len(top3_names) >= 3 else list(range(len(top3_names)))
             t_cols = st.columns(3)
             
@@ -206,12 +215,44 @@ else:
                             for c_idx in range(3):
                                 v = grid[r_idx, c_idx]
                                 color, f_color = get_color(v, comp_metric)
+                                # サイズ統一 & 上下反転（上が高め）
                                 fig.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=color, line=dict(color="#222", width=2))
                                 if v > 0:
                                     txt = f"{v:.3f}" if is_time else f"{v:.1f}"
                                     fig.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color=f_color, weight="bold", size=14))
                         fig.update_layout(height=350, margin=dict(l=5, r=5, t=5, b=5), xaxis=dict(visible=False, range=[-0.6, 2.6], fixedrange=True), yaxis=dict(visible=False, range=[-0.6, 2.6], fixedrange=True), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
                         st.plotly_chart(fig, use_container_width=True, key=f"top3_fix_{rank}", config={'displayModeBar': False})
+
+            st.markdown("---")
+            st.subheader("🆚 2名ピックアップ比較")
+            ca, cb = st.columns(2)
+            with ca: player_a = st.selectbox("選手Aを選択", PLAYERS, key="compare_a")
+            with cb: player_b = st.selectbox("選手Bを選択", PLAYERS, key="compare_b")
+            if player_a and player_b:
+                limit = 0.010 if is_time else 5.0
+                g_a = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric)
+                g_b = get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
+                p_cols = st.columns(2)
+                for idx, (name, mine, yours) in enumerate([(player_a, g_a, g_b), (player_b, g_b, g_a)]):
+                    with p_cols[idx]:
+                        st.write(f"**{name} の傾向**")
+                        fig_pair = go.Figure()
+                        for r_idx in range(3):
+                            for c_idx in range(3):
+                                v, ov = mine[r_idx, c_idx], yours[r_idx, c_idx]
+                                color, f_color = get_color(v, comp_metric)
+                                diff = abs(v - ov) if (v > 0 and ov > 0) else 0
+                                lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
+                                better = (v < ov) if is_time else (v > ov)
+                                fc = "red" if better else "blue"
+                                fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=color, line=dict(color=lc, width=lw))
+                                if v > 0:
+                                    txt = f"{v:.3f}" if is_time else f"{v:.1f}"
+                                    fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color=fc, weight="bold", size=16))
+                        # 2名比較は以前の「内中外」などの軸ラベルを維持
+                        hand_c = PLAYER_HANDS.get(name, "右")
+                        fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if hand_c=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
+                        st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
     # --- TAB 3: データ登録 (1列目[time]を参照) ---
     with tab3:
@@ -222,27 +263,17 @@ else:
         uploaded_file = st.file_uploader("Excelファイルをアップロード (.xlsx)", type=["xlsx"])
         if uploaded_file is not None:
             try:
-                # データの読み込み
                 input_df = pd.read_excel(uploaded_file)
-                # 1列目の名前を取得して 'time_col' にマッピング
-                first_col_name = input_df.columns[0]
-                cmap = {first_col_name: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
+                first_col = input_df.columns[0]
+                cmap = {first_col: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
                 input_df = input_df.rename(columns=cmap)
-                
                 if st.button("GitHubへ保存"):
-                    # 1列目(time_col)のデータを文字列化
                     input_df['time_col'] = input_df['time_col'].astype(str)
                     date_str = reg_date.strftime('%Y-%m-%d')
-                    
-                    # 画面選択の日付 + 1列目の時刻 でDateTimeを作成
                     input_df['DateTime'] = pd.to_datetime(date_str + ' ' + input_df['time_col'], errors='coerce')
                     input_df['Player Name'] = reg_player
-                    
-                    # 不正な行（時刻がない等）を削除
                     input_df = input_df.dropna(subset=['DateTime'])
-                    
                     if not input_df.empty:
-                        # 既存データと結合
                         updated_db = pd.concat([db_df, input_df], ignore_index=True)
                         if save_to_github(updated_db):
                             st.success(f"✅ {reg_player} 選手のデータを保存しました！")
