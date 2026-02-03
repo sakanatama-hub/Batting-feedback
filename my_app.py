@@ -25,7 +25,7 @@ PLAYER_HANDS = {
     "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", 
     "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", 
     "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", 
-    "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", 
+    "#28 ポール": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", 
     "#99 尾瀬 雄大": "左"
 }
 PLAYERS = list(PLAYER_HANDS.keys())
@@ -106,7 +106,7 @@ else:
     db_df = load_data_from_github()
     tab1, tab2, tab3 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録"])
 
-    # --- TAB 1: 個人分析 (そのまま維持) ---
+    # --- TAB 1: 個人分析 ---
     with tab1:
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
@@ -163,7 +163,21 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-    # --- TAB 2: 比較分析 (トップ3のラベルを削除してシンプルに並べる) ---
+                    st.subheader(f"📍 {target_metric}：インパクトポイント")
+                    fig_point = go.Figure()
+                    fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
+                    fig_point.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
+                    bx = 75 if hand == "左" else -75
+                    fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=160, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
+                    for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
+                        dot_color, _ = get_color(row[target_metric], target_metric)
+                        fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX']], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
+                    fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_point, use_container_width=True)
+
+    # --- TAB 2: 比較分析 ---
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
@@ -182,7 +196,6 @@ else:
             top3_names = top3_series.index.tolist()
             top3_scores = top3_series.values.tolist()
             
-            # 並び順: 2位, 1位, 3位
             podium_order = [1, 0, 2] if len(top3_names) >= 3 else list(range(len(top3_names)))
             t_cols = st.columns(3)
             
@@ -191,36 +204,23 @@ else:
                     name = top3_names[idx]
                     score = top3_scores[idx]
                     rank = idx + 1
-                    # 1位を大きく強調
-                    h_val = 400 if rank == 1 else 320 if rank == 2 else 280
                     
                     with t_cols[i]:
-                        st.markdown(f"<div style='text-align: center; margin-bottom: 5px;'><span style='font-size: 1.2rem; font-weight: bold;'>{rank}位: {name}</span><br><span style='font-size: 1rem;'>{score:.2f}</span></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='text-align: center; background-color: #333; padding: 5px; border-radius: 5px; margin-bottom: 5px;'><span style='font-size: 1.1rem; font-weight: bold; color: white;'>{rank}位: {name}</span><br><span style='font-size: 0.9rem; color: #ddd;'>{score:.2f}</span></div>", unsafe_allow_html=True)
                         grid = get_3x3_grid(fdf[fdf['Player Name'] == name], comp_metric)
-                        
                         fig = go.Figure()
                         for r_idx in range(3):
                             for c_idx in range(3):
                                 v = grid[r_idx, c_idx]
                                 color, f_color = get_color(v, comp_metric)
-                                fig.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=r_idx-0.5, y1=r_idx+0.5, 
-                                              fillcolor=color, line=dict(color="#333", width=2))
+                                # y座標を反転させて上が「高め」になるように固定
+                                fig.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=color, line=dict(color="#222", width=2))
                                 if v > 0:
                                     txt = f"{v:.3f}" if is_time else f"{v:.1f}"
-                                    fig.add_annotation(x=c_idx, y=r_idx, text=txt, showarrow=False, 
-                                                       font=dict(color=f_color, weight="bold", size=14))
-                        
-                        # ラベルをすべて非表示に設定
-                        fig.update_layout(
-                            height=h_val,
-                            margin=dict(l=10, r=10, t=10, b=10),
-                            xaxis=dict(visible=False, fixedrange=True),
-                            yaxis=dict(visible=False, autorange="reversed", fixedrange=True),
-                            plot_bgcolor='rgba(0,0,0,0)',
-                            paper_bgcolor='rgba(0,0,0,0)',
-                            showlegend=False
-                        )
-                        st.plotly_chart(fig, use_container_width=True, key=f"top3_p_{rank}", config={'displayModeBar': False})
+                                    fig.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color=f_color, weight="bold", size=14))
+                        # 高さを350pxに統一して横並びを揃える
+                        fig.update_layout(height=350, margin=dict(l=5, r=5, t=5, b=5), xaxis=dict(visible=False, range=[-0.6, 2.6], fixedrange=True), yaxis=dict(visible=False, range=[-0.6, 2.6], fixedrange=True), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
+                        st.plotly_chart(fig, use_container_width=True, key=f"top3_fix_{rank}", config={'displayModeBar': False})
 
             st.markdown("---")
             st.subheader("🆚 2名ピックアップ比較")
@@ -244,13 +244,14 @@ else:
                                 lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
                                 better = (v < ov) if is_time else (v > ov)
                                 fc = "red" if better else "blue"
-                                fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=r_idx-0.5, y1=r_idx+0.5, fillcolor=color, line=dict(color=lc, width=lw))
+                                fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=color, line=dict(color=lc, width=lw))
                                 if v > 0:
-                                    fig_pair.add_annotation(x=c_idx, y=r_idx, text=f"{v:.1f}", showarrow=False, font=dict(color=fc, weight="bold", size=16))
-                        fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if PLAYER_HANDS.get(name)=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低'], autorange="reversed"))
+                                    txt = f"{v:.3f}" if is_time else f"{v:.1f}"
+                                    fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color=fc, weight="bold", size=16))
+                        fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if PLAYER_HANDS.get(name)=="左" else ['内','中','外'], side="top"), yaxis=dict(visible=False, range=[-0.6, 2.6], fixedrange=True))
                         st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
-    # --- TAB 3: データ登録 (そのまま維持) ---
+    # --- TAB 3: データ登録 ---
     with tab3:
         st.title("📝 データ登録")
         c1, c2 = st.columns(2)
