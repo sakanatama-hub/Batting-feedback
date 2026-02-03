@@ -1,82 +1,36 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import datetime
-import requests
-import base64
-
-# --- 基本設定 ---
-PW = "1189" 
-GITHUB_USER = "sakanatama-hub"
-GITHUB_REPO = "Batting-feedback"
-GITHUB_FILE_PATH = "data.csv"
-GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-
-PLAYER_HANDS = {
-    "#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", 
-    "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", 
-    "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", 
-    "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", 
-    "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", 
-    "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", 
-    "#99 尾瀬 雄大": "左"
-}
-PLAYERS = list(PLAYER_HANDS.keys())
-
-# --- GitHub連携関数 ---
-def load_data_from_github():
-    url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
-    try:
-        df = pd.read_csv(url)
-        if 'DateTime' in df.columns:
-            df['DateTime'] = pd.to_datetime(df['DateTime'])
-        return df
-    except:
-        return pd.DataFrame()
-
-def save_to_github(new_df):
-    url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    res = requests.get(url, headers=headers)
-    sha = res.json().get("sha") if res.status_code == 200 else None
+# --- データの読み込みと整理 ---
+def process_new_format(df):
+    # カラム名のマッピング（ご指定の通り）
+    COLUMN_MAP = {
+        'time': 'DateTime',
+        'ExitVelocity': '打球速度',
+        'PitchBallVelocity': '投球速度',
+        'LaunchAngle': '打球角度',
+        'ExitDirection': '打球方向',
+        'Spin': '回転数',
+        'Distance': '飛距離',
+        'SpinDirection': '回転方向',
+        'スイング条件': '打撃条件' # U列
+    }
+    df = df.rename(columns=COLUMN_MAP)
     
-    save_df = new_df.copy()
-    if 'DateTime' in save_df.columns:
-        save_df['DateTime'] = save_df['DateTime'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    # 指標の抽出：V列（オンプレーンスコア）以降を数値項目として取得
+    # 今回のエクセルでは V列のインデックスは 21 です
+    v_col_index = 21 
+    all_metrics = df.columns[v_col_index:].tolist()
     
-    csv_content = save_df.to_csv(index=False)
-    b64_content = base64.b64encode(csv_content.encode()).decode()
-    data = {"message": "Update batting data", "content": b64_content}
-    if sha: data["sha"] = sha
-    put_res = requests.put(url, headers=headers, json=data)
-    return put_res.status_code in [200, 201]
+    # 優先指標をリストの先頭に持ってくる
+    priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
+    # 実際にデータ内に存在するものを優先順位通りに並べる
+    sorted_metrics = [m for m in priority if m in all_metrics]
+    sorted_metrics += [m for m in all_metrics if m not in priority]
+    
+    return df, sorted_metrics
 
-# --- 共通ユーティリティ ---
-def get_color(val, metric_name):
-    if val == 0 or pd.isna(val): return "rgba(255, 255, 255, 0.1)", "white"
-    if "スイング時間" in metric_name:
-        base, sensitivity = 0.15, 0.05
-    elif "アッパースイング度" in metric_name:
-        base, sensitivity = 10.5, 15
-    else:
-        base, sensitivity = 105, 30
-    diff = val - base
-    intensity = min(abs(diff) / sensitivity, 1.0)
-    if "スイング時間" in metric_name:
-        color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff < 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
-    else:
-        color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff > 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
-    f_color = "black" if intensity < 0.4 else "white"
-    return color, f_color
-
-def get_3x3_grid(df, metric):
-    grid = np.zeros((3, 3)); counts = np.zeros((3, 3))
-    valid = df.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
-    for _, row in valid.iterrows():
-        c = 0 if row['StrikeZoneX'] < -9.6 else 1 if row['StrikeZoneX'] <= 9.6 else 2
-        r = 0 if row['StrikeZoneY'] > 88.3 else 1 if row['StrikeZoneY'] > 66.6 else 2
-        grid[r, c] += row[metric]; counts[r, c] += 1
+# --- UI部分の追加イメージ ---
+# フィルタセクションにて
+conditions = db_df['打撃条件'].unique()
+selected_conditions = st.multiselect("打撃条件（U列）で絞り込む", conditions, default=conditions)        grid[r, c] += row[metric]; counts[r, c] += 1
     return np.where(counts > 0, grid / counts, 0)
 
 # --- UI設定 ---
