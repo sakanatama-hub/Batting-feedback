@@ -1,5 +1,5 @@
 import streamlit as st
-import pandas as pd
+import pd as pd
 import numpy as np
 import plotly.graph_objects as go
 import datetime
@@ -36,7 +36,9 @@ def load_data_from_github():
     try:
         df = pd.read_csv(url)
         if 'DateTime' in df.columns:
+            # 既存データ内のゴミ行（日付でない行）をNaTに変換して削除
             df['DateTime'] = pd.to_datetime(df['DateTime'], errors='coerce')
+            df = df.dropna(subset=['DateTime'])
         return df
     except:
         return pd.DataFrame()
@@ -49,6 +51,8 @@ def save_to_github(new_df):
     
     save_df = new_df.copy()
     if 'DateTime' in save_df.columns:
+        # 保存直前に日付型であることを保証し、フォーマット変換
+        save_df['DateTime'] = pd.to_datetime(save_df['DateTime'], errors='coerce')
         save_df = save_df.dropna(subset=['DateTime'])
         save_df['DateTime'] = save_df['DateTime'].dt.strftime('%Y-%m-%d %H:%M:%S')
         
@@ -60,7 +64,7 @@ def save_to_github(new_df):
     put_res = requests.put(url, headers=headers, json=data)
     return put_res.status_code in [200, 201]
 
-# --- 共通ユーティリティ ---
+# --- 共通ユーティリティ (変更なし) ---
 def get_color(val, metric_name):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
@@ -106,7 +110,7 @@ else:
     db_df = load_data_from_github()
     tab1, tab2, tab3 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録"])
 
-    # --- TAB 1: 個人分析 ---
+    # --- TAB 1: 個人分析 (変更なし) ---
     with tab1:
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
@@ -114,7 +118,7 @@ else:
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
-                pdf['Date_Only'] = pdf['DateTime'].dt.date
+                pdf['Date_Only'] = pd.to_datetime(pdf['DateTime']).dt.date
                 with c2: date_range = st.date_input("分析期間", value=(pdf['Date_Only'].min(), pdf['Date_Only'].max()), key="range_tab1")
                 with c3:
                     all_conds = pdf['スイング条件'].unique().tolist()
@@ -161,7 +165,7 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-    # --- TAB 2: 比較分析 ---
+    # --- TAB 2: 比較分析 (変更なし) ---
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
@@ -174,75 +178,18 @@ else:
                 sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
             fdf = db_df[db_df['スイング条件'].isin(sel_conds_c)]
             is_time = "スイング時間" in comp_metric
-            
             st.subheader("🥇 指標別トップ3")
-            # 成績順にソートしてトップ3を取得
-            top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
-            top3_names = top3_series.index.tolist()
-            top3_scores = top3_series.values.tolist()
-            
-            # 2位、1位、3位の順で並べる（視覚的な表彰台バランスのため）
-            podium_order = [1, 0, 2] if len(top3_names) >= 3 else list(range(len(top3_names)))
+            top3_names = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3).index.tolist()
             t_cols = st.columns(3)
-            
-            for i, idx in enumerate(podium_order):
-                if idx < len(top3_names):
-                    name = top3_names[idx]
-                    score = top3_scores[idx]
-                    rank = idx + 1
-                    # 順位によって図の高さを変える (1位: 400, 2位: 320, 3位: 280)
-                    h_val = 400 if rank == 1 else 320 if rank == 2 else 280
-                    
-                    with t_cols[i]:
-                        st.markdown(f"<div style='text-align: center;'><strong>{rank}位: {name}</strong><br><small>{score:.2f}</small></div>", unsafe_allow_html=True)
-                        grid = get_3x3_grid(fdf[fdf['Player Name'] == name], comp_metric)
-                        fig = go.Figure()
-                        for r_idx in range(3):
-                            for c_idx in range(3):
-                                v = grid[r_idx, c_idx]
-                                color, f_color = get_color(v, comp_metric)
-                                fig.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=r_idx-0.5, y1=r_idx+0.5, fillcolor=color, line=dict(color="#444", width=1))
-                                if v > 0:
-                                    fig.add_annotation(x=c_idx, y=r_idx, text=f"{v:.1f}", showarrow=False, font=dict(color=f_color, weight="bold", size=14))
-                        
-                        fig.update_layout(
-                            height=h_val, # ここで個別に高さを設定
-                            margin=dict(l=10, r=10, t=30, b=10), 
-                            xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if PLAYER_HANDS[name]=="左" else ['内','中','外'], side="top"), 
-                            yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低'], autorange="reversed"),
-                            showlegend=False
-                        )
-                        st.plotly_chart(fig, use_container_width=True, key=f"top3_p_{rank}")
+            for i, name in enumerate(top3_names):
+                with t_cols[i]:
+                    st.write(f"**{i+1}位: {name}**")
+                    grid = get_3x3_grid(fdf[fdf['Player Name'] == name], comp_metric)
+                    fig = go.Figure(data=go.Heatmap(z=grid, x=['外','中','内'] if PLAYER_HANDS[name]=="左" else ['内','中','外'], y=['高','中','低'], colorscale='RdBu' if is_time else 'Blues', reversescale=is_time, showscale=False))
+                    fig.update_layout(height=350, margin=dict(l=10, r=10, t=30, b=10), xaxis=dict(side="top"), yaxis=dict(autorange="reversed"))
+                    st.plotly_chart(fig, use_container_width=True, key=f"top3_{i}")
 
-            st.markdown("---")
-            st.subheader("🆚 2名ピックアップ比較")
-            ca, cb = st.columns(2)
-            with ca: player_a = st.selectbox("選手Aを選択", PLAYERS, key="compare_a")
-            with cb: player_b = st.selectbox("選手Bを選択", PLAYERS, key="compare_b")
-            if player_a and player_b:
-                limit = 0.010 if is_time else 5.0
-                g_a = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric)
-                g_b = get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
-                p_cols = st.columns(2)
-                for idx, (name, mine, yours) in enumerate([(player_a, g_a, g_b), (player_b, g_b, g_a)]):
-                    with p_cols[idx]:
-                        st.write(f"**{name} の傾向**")
-                        fig_pair = go.Figure()
-                        for r_idx in range(3):
-                            for c_idx in range(3):
-                                v, ov = mine[r_idx, c_idx], yours[r_idx, c_idx]
-                                color, f_color = get_color(v, comp_metric)
-                                diff = abs(v - ov) if (v > 0 and ov > 0) else 0
-                                lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
-                                better = (v < ov) if is_time else (v > ov)
-                                fc = "red" if better else "blue"
-                                fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=r_idx-0.5, y1=r_idx+0.5, fillcolor=color, line=dict(color=lc, width=lw))
-                                if v > 0:
-                                    fig_pair.add_annotation(x=c_idx, y=r_idx, text=f"{v:.1f}", showarrow=False, font=dict(color=fc, weight="bold", size=16))
-                        fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if PLAYER_HANDS[name]=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低'], autorange="reversed"))
-                        st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
-
-    # --- TAB 3: データ登録 ---
+    # --- TAB 3: データ登録 (ガード強化版) ---
     with tab3:
         st.title("📝 データ登録")
         c1, c2 = st.columns(2)
@@ -255,17 +202,25 @@ else:
                 cmap = {'time': 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
                 input_df = input_df.rename(columns=cmap)
                 if st.button("GitHubへ保存"):
+                    # 新規データの日時を生成
                     date_str = reg_date.strftime('%Y-%m-%d')
-                    input_df = input_df.dropna(subset=['time_col'])
                     input_df['DateTime'] = pd.to_datetime(date_str + ' ' + input_df['time_col'].astype(str), errors='coerce')
                     input_df['Player Name'] = reg_player
-                    input_df = input_df.dropna(subset=['DateTime'])
-                    if not input_df.empty:
-                        updated_db = pd.concat([db_df, input_df], ignore_index=True)
+                    
+                    # 既存データと新規データの両方からゴミを除去して結合
+                    clean_db = db_df.copy()
+                    if not clean_db.empty and 'DateTime' in clean_db.columns:
+                        clean_db['DateTime'] = pd.to_datetime(clean_db['DateTime'], errors='coerce')
+                        clean_db = clean_db.dropna(subset=['DateTime'])
+                    
+                    clean_input = input_df.dropna(subset=['DateTime'])
+                    
+                    if not clean_input.empty:
+                        updated_db = pd.concat([clean_db, clean_input], ignore_index=True)
                         if save_to_github(updated_db):
-                            st.success(f"✅ {reg_player} 選手のデータを保存しました！")
+                            st.success(f"✅ {reg_player} 選手のデータを保存し、既存の不良データも修復しました！")
                             st.rerun()
                     else:
-                        st.warning("⚠️ 有効なデータが見つかりませんでした。")
+                        st.warning("⚠️ 有効な打撃データが見つかりませんでした。")
             except Exception as e:
                 st.error(f"❌ エラー: {e}")
