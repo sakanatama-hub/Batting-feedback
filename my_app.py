@@ -40,11 +40,9 @@ def save_to_github(new_df):
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     res = requests.get(url, headers=headers)
     sha = res.json().get("sha") if res.status_code == 200 else None
-    
     save_df = new_df.copy()
     if 'DateTime' in save_df.columns:
         save_df['DateTime'] = save_df['DateTime'].dt.strftime('%Y-%m-%d %H:%M:%S')
-    
     csv_content = save_df.to_csv(index=False)
     b64_content = base64.b64encode(csv_content.encode()).decode()
     data = {"message": "Update batting data", "content": b64_content}
@@ -98,31 +96,24 @@ else:
         if not db_df.empty:
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
-            
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
                 pdf['Date_Only'] = pd.to_datetime(pdf['DateTime']).dt.date
-                with c2:
-                    date_range = st.date_input("分析期間を選択", value=(pdf['Date_Only'].min(), pdf['Date_Only'].max()), key="range_tab1")
-                
-                # スイング条件（U列）のフィルタ
-                all_conds = pdf['スイング条件'].unique().tolist()
+                with c2: date_range = st.date_input("分析期間", value=(pdf['Date_Only'].min(), pdf['Date_Only'].max()), key="range_tab1")
                 with c3:
+                    all_conds = pdf['スイング条件'].unique().tolist()
                     sel_conds = st.multiselect("打撃条件", all_conds, default=all_conds, key="cond_tab1")
-                
-                # 指標の動的取得と優先順位
-                v_start_idx = pdf.columns.get_loc("オンプレーンスコア")
-                all_metrics = pdf.columns[v_start_idx:].tolist()
-                priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
-                sorted_metrics = [m for m in priority if m in all_metrics] + [m for m in all_metrics if m not in priority]
-                
                 with c4:
+                    v_start_idx = pdf.columns.get_loc("オンプレーンスコア")
+                    all_metrics = pdf.columns[v_start_idx:].tolist()
+                    priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
+                    sorted_metrics = [m for m in priority if m in all_metrics] + [m for m in all_metrics if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
                 vdf = pdf[(pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1]) & (pdf['スイング条件'].isin(sel_conds))].copy() if isinstance(date_range, tuple) and len(date_range) == 2 else pdf.copy()
 
                 if not vdf.empty:
-                    # --- ヒートマップ描画 (既存ロジック維持) ---
+                    # ヒートマップ描画 (5x5)
                     st.subheader(f"📊 {target_metric}：期間内平均")
                     fig_heat = go.Figure()
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
@@ -141,7 +132,6 @@ else:
                         r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
                         grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
                     display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
-                    
                     hand = PLAYER_HANDS[target_player]
                     for r in range(5):
                         for c in range(5):
@@ -154,11 +144,11 @@ else:
                             if val > 0:
                                 txt = f"{val:.3f}" if "時間" in target_metric else f"{val:.1f}"
                                 fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=14, color=f_color, weight="bold"))
-                    
                     fig_heat.add_shape(type="rect", x0=z_x_start + grid_side, x1=z_x_start + grid_side * 4, y0=z_y_start + grid_side, y1=z_y_start + grid_side * 4, line=dict(color="red", width=4), layer="above")
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True, key="p_heat_main")
 
+                    # インパクトポイント描画
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -174,22 +164,28 @@ else:
                     fig_point.update_layout(height=750, xaxis=dict(range=[-250, 250], visible=False), yaxis=dict(range=[-20, 300], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True, key="p_point_main")
 
-    # --- TAB 2: 比較分析 ---
+    # --- TAB 2: 比較分析 (2選手比較 復活！) ---
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
             v_start_idx = db_df.columns.get_loc("オンプレーンスコア")
             all_metrics = db_df.columns[v_start_idx:].tolist()
-            comp_metric = st.selectbox("比較する指標を選択", all_metrics, key="m_tab2")
+            c1, c2 = st.columns(2)
+            with c1: comp_metric = st.selectbox("比較指標", all_metrics, key="m_tab2")
+            with c2:
+                all_conds_c = db_df['スイング条件'].unique().tolist()
+                sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
+            
+            fdf = db_df[db_df['スイング条件'].isin(sel_conds_c)]
             is_time = "スイング時間" in comp_metric
             
             st.subheader("🥇 指標別トップ3")
-            top3_names = db_df.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3).index.tolist()
+            top3_names = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3).index.tolist()
             t_cols = st.columns(3)
             for i, name in enumerate(top3_names):
                 with t_cols[i]:
                     st.write(f"**{i+1}位: {name}**")
-                    grid = get_3x3_grid(db_df[db_df['Player Name'] == name], comp_metric)
+                    grid = get_3x3_grid(fdf[fdf['Player Name'] == name], comp_metric)
                     fig = go.Figure(data=go.Heatmap(z=grid, x=['外','中','内'] if PLAYER_HANDS[name]=="左" else ['内','中','外'], y=['高','中','低'], colorscale='RdBu' if is_time else 'Blues', reversescale=is_time, showscale=False))
                     for r in range(3):
                         for c in range(3):
@@ -198,32 +194,50 @@ else:
                     fig.update_layout(height=350, margin=dict(l=10, r=10, t=30, b=10), xaxis=dict(side="top"), yaxis=dict(autorange="reversed"))
                     st.plotly_chart(fig, use_container_width=True, key=f"top3_{name}_{i}")
 
-    # --- TAB 3: データ登録 (新形式対応) ---
+            st.markdown("---")
+            st.subheader("🆚 2名ピックアップ比較")
+            ca, cb = st.columns(2)
+            with ca: player_a = st.selectbox("選手Aを選択", PLAYERS, key="compare_a")
+            with cb: player_b = st.selectbox("選手Bを選択", PLAYERS, key="compare_b")
+            
+            if player_a and player_b:
+                limit = 0.010 if is_time else 5.0
+                g_a = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric)
+                g_b = get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
+                
+                p_cols = st.columns(2)
+                for idx, (name, mine, yours) in enumerate([(player_a, g_a, g_b), (player_b, g_b, g_a)]):
+                    with p_cols[idx]:
+                        fig_pair = go.Figure()
+                        for r in range(3):
+                            for c in range(3):
+                                v, ov = mine[r,c], yours[r,c]
+                                diff = abs(v - ov) if (v > 0 and ov > 0) else 0
+                                lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
+                                better = (v < ov) if is_time else (v > ov)
+                                fc = "red" if better else "blue"
+                                fig_pair.add_shape(type="rect", x0=c-0.5, x1=c+0.5, y0=r-0.5, y1=r+0.5, line=dict(color=lc, width=lw), fillcolor="white")
+                                if v > 0: fig_pair.add_annotation(x=c, y=r, text=f"{v:.1f}", showarrow=False, font=dict(color=fc, weight="bold", size=16))
+                        fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if PLAYER_HANDS[name]=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低'], autorange="reversed"))
+                        st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{name}_{idx}")
+
+    # --- TAB 3: データ登録 ---
     with tab3:
         st.title("📝 データ登録")
         c1, c2 = st.columns(2)
         with c1: reg_player = st.selectbox("登録する選手を選択", PLAYERS, key="reg_p_tab3")
         with c2: reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_tab3")
-        
         uploaded_file = st.file_uploader("Excelファイルをアップロード (.xlsx)", type=["xlsx"])
         if uploaded_file is not None:
             try:
                 input_df = pd.read_excel(uploaded_file)
-                # 英語カラムをマッピング
-                COLUMN_MAP = {
-                    'time': 'DateTime', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度',
-                    'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数',
-                    'Distance': '飛距離', 'SpinDirection': '回転方向'
-                }
-                input_df = input_df.rename(columns=COLUMN_MAP)
-                st.write("📋 読み込みプレビュー:")
-                st.dataframe(input_df.head())
-                
+                cmap = {'time': 'DateTime', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
+                input_df = input_df.rename(columns=cmap)
                 if st.button("GitHubへ保存"):
                     input_df['Player Name'] = reg_player
                     input_df['DateTime'] = pd.to_datetime(reg_date)
                     updated_db = pd.concat([db_df, input_df], ignore_index=True)
                     if save_to_github(updated_db):
-                        st.success(f"✅ 保存完了！")
+                        st.success(f"✅ {reg_player} 選手のデータを保存しました。")
                         st.rerun()
             except Exception as e: st.error(f"❌ エラー: {e}")
