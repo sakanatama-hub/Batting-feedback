@@ -13,7 +13,7 @@ GITHUB_REPO = "Batting-feedback"
 GITHUB_FILE_PATH = "data.csv"
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 
-# --- ストライクゾーン定義 (cm) ---
+# --- ストライクゾーン定義 ---
 SZ_X_MIN, SZ_X_MAX = -28.8, 28.8
 SZ_X_TH1, SZ_X_TH2 = -9.6, 9.6
 SZ_Y_MIN, SZ_Y_MAX = 45.0, 110.0
@@ -61,40 +61,31 @@ def save_to_github(new_df):
     put_res = requests.put(url, headers=headers, json=data)
     return put_res.status_code in [200, 201]
 
-# --- 共通ユーティリティ ---
 def get_color(val, metric_name):
-    if val == 0 or pd.isna(val):
-        return "rgba(255, 255, 255, 0.1)", "white"
-    if "スイング時間" in metric_name:
-        base, sensitivity = 0.15, 0.05
-    elif "アッパースイング度" in metric_name:
-        base, sensitivity = 10.5, 15
-    else:
-        base, sensitivity = 105, 30
+    if val == 0 or pd.isna(val): return "rgba(255, 255, 255, 0.1)", "white"
+    if "スイング時間" in metric_name: base, sensitivity = 0.15, 0.05
+    elif "アッパースイング度" in metric_name: base, sensitivity = 10.5, 15
+    else: base, sensitivity = 105, 30
     diff = val - base
     intensity = min(abs(diff) / sensitivity, 1.0)
     if "スイング時間" in metric_name:
         color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff < 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
     else:
         color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff > 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
-    f_color = "black" if intensity < 0.4 else "white"
-    return color, f_color
+    return color, ("black" if intensity < 0.4 else "white")
 
 def get_3x3_grid(df, metric):
-    grid = np.zeros((3, 3))
-    counts = np.zeros((3, 3))
+    grid = np.zeros((3, 3)); counts = np.zeros((3, 3))
     valid = df.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
     for _, row in valid.iterrows():
         c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
         r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
-        grid[r, c] += row[metric]
-        counts[r, c] += 1
+        grid[r, c] += row[metric]; counts[r, c] += 1
     return np.where(counts > 0, grid / counts, 0)
 
-# --- UI設定 ---
+# --- UI ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
-if "ok" not in st.session_state:
-    st.session_state["ok"] = False
+if "ok" not in st.session_state: st.session_state["ok"] = False
 
 if not st.session_state["ok"]:
     st.title("⚾️ TOYOTA BASEBALL CLUB")
@@ -107,7 +98,6 @@ else:
     db_df = load_data_from_github()
     tab1, tab2, tab3 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録"])
 
-    # --- TAB 1: 個人分析 (機能維持) ---
     with tab1:
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
@@ -129,7 +119,6 @@ else:
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
                 
                 vdf = pdf[(pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1]) & (pdf['スイング条件'].isin(sel_conds))].copy() if isinstance(date_range, tuple) and len(date_range) == 2 else pdf.copy()
-                
                 if not vdf.empty:
                     st.subheader(f"📊 {target_metric}：期間内平均")
                     fig_heat = go.Figure()
@@ -138,8 +127,7 @@ else:
                     fig_heat.add_shape(type="path", path=f"M {R_x} {R_y} L -450 600 L 450 600 L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
-                    grid_side = 55
-                    z_x_start, z_y_start = -(grid_side * 2.5), 180
+                    grid_side = 55; z_x_start, z_y_start = -(grid_side * 2.5), 180
                     def get_grid_pos(x, y):
                         r = 0 if y > SZ_Y_MAX else 1 if y > SZ_Y_TH2 else 2 if y > SZ_Y_TH1 else 3 if y > SZ_Y_MIN else 4
                         c = 0 if x < SZ_X_MIN else 1 if x < SZ_X_TH1 else 2 if x <= SZ_X_TH2 else 3 if x <= SZ_X_MAX else 4
@@ -179,7 +167,6 @@ else:
                     fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True)
 
-    # --- TAB 2: 比較分析 (トップ3の図だけ新デザインに) ---
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
@@ -197,25 +184,18 @@ else:
             top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
             top3_names = top3_series.index.tolist()
             top3_scores = top3_series.values.tolist()
-            
-            # 2位, 1位, 3位 の順
             podium_order = [1, 0, 2] if len(top3_names) >= 3 else list(range(len(top3_names)))
             t_cols = st.columns(3)
-            
             for i, idx in enumerate(podium_order):
                 if idx < len(top3_names):
-                    name = top3_names[idx]
-                    score = top3_scores[idx]
-                    rank = idx + 1
+                    name = top3_names[idx]; score = top3_scores[idx]; rank = idx + 1
                     with t_cols[i]:
                         st.markdown(f"<div style='text-align: center; background-color: #333; padding: 5px; border-radius: 5px; margin-bottom: 5px;'><span style='font-size: 1.1rem; font-weight: bold; color: white;'>{rank}位: {name}</span><br><span style='font-size: 0.9rem; color: #ddd;'>{score:.2f}</span></div>", unsafe_allow_html=True)
                         grid = get_3x3_grid(fdf[fdf['Player Name'] == name], comp_metric)
                         fig = go.Figure()
                         for r_idx in range(3):
                             for c_idx in range(3):
-                                v = grid[r_idx, c_idx]
-                                color, f_color = get_color(v, comp_metric)
-                                # サイズ統一 & 上下反転（上が高め）
+                                v = grid[r_idx, c_idx]; color, f_color = get_color(v, comp_metric)
                                 fig.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=color, line=dict(color="#222", width=2))
                                 if v > 0:
                                     txt = f"{v:.3f}" if is_time else f"{v:.1f}"
@@ -230,8 +210,7 @@ else:
             with cb: player_b = st.selectbox("選手Bを選択", PLAYERS, key="compare_b")
             if player_a and player_b:
                 limit = 0.010 if is_time else 5.0
-                g_a = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric)
-                g_b = get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
+                g_a = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric); g_b = get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
                 p_cols = st.columns(2)
                 for idx, (name, mine, yours) in enumerate([(player_a, g_a, g_b), (player_b, g_b, g_a)]):
                     with p_cols[idx]:
@@ -239,46 +218,58 @@ else:
                         fig_pair = go.Figure()
                         for r_idx in range(3):
                             for c_idx in range(3):
-                                v, ov = mine[r_idx, c_idx], yours[r_idx, c_idx]
-                                color, f_color = get_color(v, comp_metric)
+                                v, ov = mine[r_idx, c_idx], yours[r_idx, c_idx]; color, f_color = get_color(v, comp_metric)
                                 diff = abs(v - ov) if (v > 0 and ov > 0) else 0
                                 lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
                                 better = (v < ov) if is_time else (v > ov)
-                                fc = "red" if better else "blue"
                                 fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=color, line=dict(color=lc, width=lw))
                                 if v > 0:
                                     txt = f"{v:.3f}" if is_time else f"{v:.1f}"
-                                    fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color=fc, weight="bold", size=16))
-                        # 2名比較は以前の「内中外」などの軸ラベルを維持
+                                    fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color="red" if better else "blue", weight="bold", size=16))
                         hand_c = PLAYER_HANDS.get(name, "右")
                         fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if hand_c=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
                         st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
-    # --- TAB 3: データ登録 (1列目[time]を参照) ---
     with tab3:
         st.title("📝 データ登録")
         c1, c2 = st.columns(2)
         with c1: reg_player = st.selectbox("登録する選手を選択", PLAYERS, key="reg_p_tab3")
         with c2: reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_tab3")
         uploaded_file = st.file_uploader("Excelファイルをアップロード (.xlsx)", type=["xlsx"])
+        
         if uploaded_file is not None:
             try:
+                # ファイルの1列目を時刻として特定
                 input_df = pd.read_excel(uploaded_file)
-                first_col = input_df.columns[0]
-                cmap = {first_col: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
+                time_col_name = input_df.columns[0]
+                
+                # 指標名のマッピング
+                cmap = {time_col_name: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
                 input_df = input_df.rename(columns=cmap)
+                
                 if st.button("GitHubへ保存"):
+                    # 時刻の変換と日付の結合
                     input_df['time_col'] = input_df['time_col'].astype(str)
                     date_str = reg_date.strftime('%Y-%m-%d')
                     input_df['DateTime'] = pd.to_datetime(date_str + ' ' + input_df['time_col'], errors='coerce')
                     input_df['Player Name'] = reg_player
-                    input_df = input_df.dropna(subset=['DateTime'])
-                    if not input_df.empty:
-                        updated_db = pd.concat([db_df, input_df], ignore_index=True)
-                        if save_to_github(updated_db):
-                            st.success(f"✅ {reg_player} 選手のデータを保存しました！")
-                            st.rerun()
+                    
+                    # 有効なデータのみ抽出
+                    upload_ready_df = input_df.dropna(subset=['DateTime']).copy()
+                    
+                    if not upload_ready_df.empty:
+                        # 既存データとの結合
+                        updated_db = pd.concat([db_df, upload_ready_df], ignore_index=True)
+                        
+                        # 保存実行と結果表示（ここを強化）
+                        status = save_to_github(updated_db)
+                        if status:
+                            st.success(f"✅ {reg_player} 選手のデータを {len(upload_ready_df)} 件保存しました！")
+                            st.balloons()
+                            # 5秒後にリロードを促す（任意）
+                        else:
+                            st.error("❌ GitHubへの保存に失敗しました。トークンや通信環境を確認してください。")
                     else:
-                        st.error("❌ 1列目に有効な時刻データが見つかりませんでした。")
+                        st.warning("⚠️ アップロードされたファイルの1列目に有効な時刻データがありません。")
             except Exception as e:
-                st.error(f"❌ エラー: {e}")
+                st.error(f"❌ 読み込みエラー: {e}")
