@@ -13,12 +13,9 @@ GITHUB_REPO = "Batting-feedback"
 GITHUB_FILE_PATH = "data.csv"
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 
-# --- ストライクゾーン定義 (cm単位と仮定) ---
-# X軸: -28.8 ～ 28.8 (3分割: -9.6, 9.6)
+# --- ストライクゾーン定義 (判定用: cm) ---
 SZ_X_MIN, SZ_X_MAX = -28.8, 28.8
 SZ_X_TH1, SZ_X_TH2 = -9.6, 9.6
-
-# Y軸: 45.0 ～ 110.0 (3分割: 66.6, 88.3)
 SZ_Y_MIN, SZ_Y_MAX = 45.0, 110.0
 SZ_Y_TH1, SZ_Y_TH2 = 66.6, 88.3
 
@@ -94,7 +91,7 @@ def get_3x3_grid(df, metric):
     counts = np.zeros((3, 3))
     valid = df.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
     for _, row in valid.iterrows():
-        # 定義した閾値を使用
+        # 定義した閾値を使用 (判定用)
         c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
         r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
         grid[r, c] += row[metric]
@@ -150,11 +147,16 @@ else:
                     fig_heat.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
                     
-                    # グリッド描画 (定義した定数を使用)
+                    # --- 描画設定 (見た目を大きく戻す) ---
+                    grid_side = 55 # 以前の1マスの大きさ
+                    z_x_start = -(grid_side * 2.5) # X開始位置
+                    z_y_start = 180 # Y開始位置 (以前の値)
+
+                    # グリッド計算用の関数 (判定は正確なcm値を使用)
                     def get_grid_pos(x, y):
-                        # Y: 110, 88.3, 66.6, 45 (外, 高, 中, 低, 外)
+                        # Y: 110, 88.3, 66.6, 45
                         r = 0 if y > SZ_Y_MAX else 1 if y > SZ_Y_TH2 else 2 if y > SZ_Y_TH1 else 3 if y > SZ_Y_MIN else 4
-                        # X: -28.8, -9.6, 9.6, 28.8 (外, 内, 中, 外, 外)
+                        # X: -28.8, -9.6, 9.6, 28.8
                         c = 0 if x < SZ_X_MIN else 1 if x < SZ_X_TH1 else 2 if x <= SZ_X_TH2 else 3 if x <= SZ_X_MAX else 4
                         return r, c
                     
@@ -166,16 +168,15 @@ else:
                         grid_count[r, c] += 1
                     display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
                     
-                    # グリッドの座標計算も定数から自動算出
-                    x_steps = [SZ_X_MIN - (SZ_X_TH2 - SZ_X_TH1), SZ_X_MIN, SZ_X_TH1, SZ_X_TH2, SZ_X_MAX, SZ_X_MAX + (SZ_X_TH2 - SZ_X_TH1)]
-                    y_steps = [SZ_Y_MAX + (SZ_Y_TH2 - SZ_Y_TH1), SZ_Y_MAX, SZ_Y_TH2, SZ_Y_TH1, SZ_Y_MIN, SZ_Y_MIN - (SZ_Y_TH2 - SZ_Y_TH1)]
-                    
                     hand = PLAYER_HANDS[target_player]
                     for r in range(5):
                         for c in range(5):
                             logic_c = c if hand == "右" else (4 - c)
-                            x0, x1 = x_steps[c], x_steps[c+1]
-                            y0, y1 = y_steps[r+1], y_steps[r] # Yは上から下へ
+                            # 描画座標は以前の grid_side 計算式を使用
+                            x0 = z_x_start + c * grid_side
+                            x1 = z_x_start + (c + 1) * grid_side
+                            y0 = z_y_start + (4 - r) * grid_side
+                            y1 = z_y_start + (5 - r) * grid_side
                             
                             val = display_grid[r, logic_c]
                             color, f_color = get_color(val, target_metric)
@@ -184,11 +185,18 @@ else:
                                 txt = f"{val:.3f}" if "時間" in target_metric else f"{val:.1f}"
                                 fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=14, color=f_color, weight="bold"))
                     
-                    # 赤枠（ストライクゾーン）も定数で描画
-                    fig_heat.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="red", width=4), layer="above")
+                    # 赤枠（ストライクゾーン）も grid_side ベースで描画
+                    # 中心3x3マス: xは 1~4, yは 1~4 の範囲
+                    rx0 = z_x_start + 1 * grid_side
+                    rx1 = z_x_start + 4 * grid_side
+                    ry0 = z_y_start + 1 * grid_side
+                    ry1 = z_y_start + 4 * grid_side
+                    fig_heat.add_shape(type="rect", x0=rx0, x1=rx1, y0=ry0, y1=ry1, line=dict(color="red", width=4), layer="above")
+
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True, key="p_heat_main")
 
+                    # --- インパクトポイント（こちらも拡大して合わせる） ---
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -197,13 +205,16 @@ else:
                     fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=160, fillcolor="rgba(200,200,200,0.4)", line_width=0)
                     fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
                     
-                    # ストライクゾーン枠（白枠）を定義と完全に一致させる
-                    fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
+                    # 拡大係数 (55 / 19.2 ≈ 2.86)
+                    SCALE = 2.8
+                    # ストライクゾーン白枠（拡大座標で描画）
+                    fig_point.add_shape(type="rect", x0=SZ_X_MIN*SCALE, x1=SZ_X_MAX*SCALE, y0=SZ_Y_MIN+10, y1=SZ_Y_MAX+10, line=dict(color="rgba(255,255,255,0.8)", width=4))
                     
-                    sc, y_off = 1.0, 0 # 座標系が一致したので補正なしでプロット
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
                         dot_color, _ = get_color(row[target_metric], target_metric)
-                        fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX']], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
+                        # データを拡大してプロット
+                        fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX']*SCALE], y=[row['StrikeZoneY'] + 10], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
+                    
                     fig_point.update_layout(height=750, xaxis=dict(range=[-250, 250], visible=False), yaxis=dict(range=[-20, 300], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True, key="p_point_main")
 
