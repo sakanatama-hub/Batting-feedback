@@ -36,7 +36,6 @@ def load_data_from_github():
     try:
         df = pd.read_csv(url)
         if 'DateTime' in df.columns:
-            # 安全に日付型へ変換 (errors='coerce' で不正値は NaT になる)
             df['DateTime'] = pd.to_datetime(df['DateTime'], errors='coerce')
         return df
     except:
@@ -49,7 +48,7 @@ def save_to_github(new_df):
     sha = res.json().get("sha") if res.status_code == 200 else None
     save_df = new_df.copy()
     if 'DateTime' in save_df.columns:
-        # .dt アクセサを使う前に無効な日付行を除去
+        # 保存前にNaT（無効な日付）を確実に排除
         save_df = save_df.dropna(subset=['DateTime'])
         save_df['DateTime'] = save_df['DateTime'].dt.strftime('%Y-%m-%d %H:%M:%S')
     csv_content = save_df.to_csv(index=False)
@@ -64,28 +63,18 @@ def save_to_github(new_df):
 def get_color(val, metric_name):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
-    
     if "スイング時間" in metric_name:
         base, sensitivity = 0.15, 0.05
     elif "アッパースイング度" in metric_name:
         base, sensitivity = 10.5, 15
     else:
         base, sensitivity = 105, 30
-    
     diff = val - base
     intensity = min(abs(diff) / sensitivity, 1.0)
-    
     if "スイング時間" in metric_name:
-        if diff < 0:
-            color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)"
-        else:
-            color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
+        color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff < 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
     else:
-        if diff > 0:
-            color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)"
-        else:
-            color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
-            
+        color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff > 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
     f_color = "black" if intensity < 0.4 else "white"
     return color, f_color
 
@@ -269,7 +258,7 @@ else:
                         fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if PLAYER_HANDS[name]=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低'], autorange="reversed"))
                         st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
-    # --- TAB 3: データ登録 (エラー回避用修正) ---
+    # --- TAB 3: データ登録 (修正版) ---
     with tab3:
         st.title("📝 データ登録")
         c1, c2 = st.columns(2)
@@ -298,12 +287,19 @@ else:
                 if st.button("GitHubへ保存"):
                     input_df['Player Name'] = reg_player
                     date_str = reg_date.strftime('%Y-%m-%d')
-                    # 【ここを修正】errors='coerce' で不正な時間を NaT にし、後のエラーを防止
+                    
+                    # 日付を生成し、無効な行（空行など）をNaTに変換
                     input_df['DateTime'] = pd.to_datetime(date_str + ' ' + input_df['time_col'].astype(str), errors='coerce')
                     
-                    updated_db = pd.concat([db_df, input_df], ignore_index=True)
-                    if save_to_github(updated_db):
-                        st.success(f"✅ {reg_player} 選手のデータを保存しました！")
-                        st.rerun()
+                    # 【重要】日付が取得できなかった行を完全に削除（これで.dtエラーを回避）
+                    input_df = input_df.dropna(subset=['DateTime'])
+                    
+                    if not input_df.empty:
+                        updated_db = pd.concat([db_df, input_df], ignore_index=True)
+                        if save_to_github(updated_db):
+                            st.success(f"✅ {reg_player} 選手のデータを保存しました！")
+                            st.rerun()
+                    else:
+                        st.warning("⚠️ 保存できる有効なデータが見つかりませんでした。")
             except Exception as e:
                 st.error(f"❌ エラー: {e}")
