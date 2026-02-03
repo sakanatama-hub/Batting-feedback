@@ -140,25 +140,28 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True, key="p_heat_main")
 
+                    # --- インパクトポイント（縦長に調整） ---
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
-                    fig_point.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=200, fillcolor="#8B4513", line_width=0, layer="below")
+                    fig_point.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=250, fillcolor="#8B4513", line_width=0, layer="below")
                     fig_point.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
                     
-                    # --- 打者とストライクゾーン枠線の復元 🛡️ ---
                     bx = 75 if hand == "左" else -75
                     fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=140, fillcolor="rgba(200,200,200,0.4)", line_width=0)
                     fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=145, y1=175, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    # ストライクゾーン枠
                     fig_point.add_shape(type="rect", x0=-35, x1=35, y0=35, y1=115, line=dict(color="rgba(255,255,255,0.8)", width=4))
                     
                     sc, y_off = 1.2, 40
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
                         dot_color, _ = get_color(row[target_metric], target_metric)
                         fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX'] * sc], y=[row['StrikeZoneY'] + y_off], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
-                    fig_point.update_layout(width=900, height=550, xaxis=dict(range=[-150, 150], visible=False), yaxis=dict(range=[-20, 200], visible=False))
-                    st.plotly_chart(fig_point, use_container_width=True, key="p_point_main")
+                    
+                    # heightを800、widthを500程度に設定して縦長に 📏
+                    fig_point.update_layout(width=500, height=800, xaxis=dict(range=[-150, 150], visible=False), yaxis=dict(range=[-20, 250], visible=False), margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_point, use_container_width=False, key="p_point_main")
 
-    # --- TAB 2 & 3 は以前の統合コードを維持 ---
+    # --- TAB 2 & 3 は省略せずに維持 ---
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
@@ -210,6 +213,10 @@ else:
                 st.write("📋 プレビュー:")
                 st.dataframe(input_df.head())
                 if st.button("GitHubへ保存"):
-                    # 以前作成した登録ロジック（選手名・日付付与）がここに入ります
-                    st.success("✅ 登録が完了しました！")
+                    # 以前の登録ロジックをここに維持
+                    input_df['Player Name'] = st.session_state.get('reg_p_tab3', "未選択")
+                    input_df['DateTime'] = st.session_state.get('reg_d_tab3', datetime.date.today()).strftime('%Y-%m-%d')
+                    updated_db = pd.concat([db_df, input_df], ignore_index=True)
+                    if save_to_github(updated_db):
+                        st.success("✅ 登録が完了しました！")
             except Exception as e: st.error(f"❌ エラー: {e}")
