@@ -270,7 +270,8 @@ else:
                         st.success(f"✅ {reg_player} 選手のデータを保存しました！")
                         st.rerun()
             except Exception as e:
-                st.error(f"❌ エラー: {e}")    f_color = "black" if intensity < 0.4 else "white"
+                st.error(f"❌ エラー: {e}")    f_color = "black" if intensity < 0.4 
+                else "white"
     return color, f_color
 
 def get_3x3_grid(df, metric):
