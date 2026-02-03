@@ -140,27 +140,28 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True, key="p_heat_main")
 
-                    # --- インパクトポイント（中間サイズに調整 📏） ---
+                    # --- インパクトポイント（画面横いっぱい ↔ 縦に長く調整） ---
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
-                    fig_point.add_shape(type="rect", x0=-150, x1=150, y0=-50, y1=250, fillcolor="#8B4513", line_width=0, layer="below")
+                    fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
                     fig_point.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
                     
                     bx = 75 if hand == "左" else -75
-                    fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=140, fillcolor="rgba(200,200,200,0.4)", line_width=0)
-                    fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=145, y1=175, fillcolor="rgba(200,200,200,0.4)", line_width=0)
-                    fig_point.add_shape(type="rect", x0=-35, x1=35, y0=35, y1=115, line=dict(color="rgba(255,255,255,0.8)", width=4))
+                    fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=160, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    # ストライクゾーンの縦を強調（yの範囲を広めに描画）
+                    fig_point.add_shape(type="rect", x0=-35, x1=35, y0=35, y1=135, line=dict(color="rgba(255,255,255,0.8)", width=4))
                     
                     sc, y_off = 1.2, 40
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
                         dot_color, _ = get_color(row[target_metric], target_metric)
                         fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX'] * sc], y=[row['StrikeZoneY'] + y_off], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
                     
-                    # 縦横比を改善（高さ650, 幅550程度の中間サイズ）
-                    fig_point.update_layout(width=550, height=650, xaxis=dict(range=[-150, 150], visible=False), yaxis=dict(range=[-20, 250], visible=False), margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_point, use_container_width=False, key="p_point_main")
+                    # 修正点：use_container_width=True で横幅を最大化、heightを大きくして高さを出す
+                    fig_point.update_layout(height=750, xaxis=dict(range=[-250, 250], visible=False), yaxis=dict(range=[-20, 300], visible=False), margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_point, use_container_width=True, key="p_point_main")
 
-    # --- TAB 2: 比較分析（バグ修正済み 🛠️） ---
+    # --- TAB 2: 比較分析 ---
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
@@ -175,24 +176,12 @@ else:
                 with t_cols[i]:
                     st.write(f"**{i+1}位: {name}**")
                     grid = get_3x3_grid(db_df[db_df['Player Name'] == name], comp_metric)
-                    
-                    # 修正：数値が確実に見えるように色のコントラストを調整
-                    fig = go.Figure(data=go.Heatmap(
-                        z=grid, 
-                        x=['外','中','内'] if PLAYER_HANDS[name]=="左" else ['内','中','外'], 
-                        y=['高','中','低'], 
-                        colorscale='RdBu' if is_time else 'Blues', 
-                        reversescale=is_time, 
-                        showscale=False
-                    ))
-                    
-                    # 修正：グリッド内に数値を再配置（確実に表示）
+                    fig = go.Figure(data=go.Heatmap(z=grid, x=['外','中','内'] if PLAYER_HANDS[name]=="左" else ['内','中','外'], y=['高','中','低'], colorscale='RdBu' if is_time else 'Blues', reversescale=is_time, showscale=False))
                     for r in range(3):
                         for c in range(3):
                             v = grid[r, c]
                             if v > 0:
                                 fig.add_annotation(x=c, y=r, text=f"{v:.1f}", showarrow=False, font=dict(color="black", weight="bold", size=16))
-                                
                     fig.update_layout(height=350, margin=dict(l=10, r=10, t=30, b=10), xaxis=dict(side="top"), yaxis=dict(autorange="reversed"))
                     st.plotly_chart(fig, use_container_width=True, key=f"top3_{name}_{i}")
 
@@ -230,6 +219,5 @@ else:
                 st.write("📋 プレビュー:")
                 st.dataframe(input_df.head())
                 if st.button("GitHubへ保存"):
-                    # 登録ロジックの維持
                     st.success("✅ 登録が完了しました！")
             except Exception as e: st.error(f"❌ エラー: {e}")
