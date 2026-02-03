@@ -55,10 +55,7 @@ def save_to_github(new_df):
     if sha:
         data["sha"] = sha
     put_res = requests.put(url, headers=headers, json=data)
-    if put_res.status_code in [200, 201]:
-        return True, "成功"
-    else:
-        return False, f"エラー {put_res.status_code}: {put_res.text}"
+    return (True, "成功") if put_res.status_code in [200, 201] else (False, f"エラー {put_res.status_code}")
 
 # --- 共通ユーティリティ ---
 def get_color(val, metric_name):
@@ -223,14 +220,21 @@ else:
                         fig_pair = go.Figure()
                         for r_idx in range(3):
                             for c_idx in range(3):
-                                v, ov = mine[r_idx, c_idx], yours[r_idx, c_idx]; color, _ = get_color(v, comp_metric)
+                                v, ov = mine[r_idx, c_idx], yours[r_idx, c_idx]
                                 diff = abs(v - ov) if (v > 0 and ov > 0) else 0
                                 lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
-                                # フォントカラーを白(white)に固定して視認性を向上
-                                fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=color, line=dict(color=lc, width=lw))
+                                
+                                # 高い(良い)なら赤、低い(悪い)なら青 (時間は逆転)
+                                if is_time:
+                                    font_c = "red" if (v < ov and v > 0 and ov > 0) else "blue" if (v > ov and v > 0 and ov > 0) else "black"
+                                else:
+                                    font_c = "red" if (v > ov and v > 0 and ov > 0) else "blue" if (v < ov and v > 0 and ov > 0) else "black"
+                                
+                                # 塗りつぶしを白(white)に変更
+                                fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor="white", line=dict(color=lc, width=lw))
                                 if v > 0:
                                     txt = f"{v:.3f}" if is_time else f"{v:.1f}"
-                                    fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color="white", weight="bold", size=16))
+                                    fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color=font_c, weight="bold", size=16))
                         hand_c = PLAYER_HANDS.get(name, "右")
                         fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if hand_c=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
                         st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
@@ -260,7 +264,6 @@ else:
                         else:
                             updated_db = input_df
                         success, message = save_to_github(updated_db)
-                        if success:
-                            st.success(f"✅ {reg_player} 選手のデータを保存しました！"); st.balloons()
+                        if success: st.success(f"✅ {reg_player} 選手のデータを保存しました！"); st.balloons()
                         else: st.error(f"❌ 保存に失敗しました。理由: {message}")
             except Exception as e: st.error(f"❌ 読み込みエラー: {e}")
