@@ -49,7 +49,6 @@ def save_to_github(new_df):
     
     save_df = new_df.copy()
     if 'DateTime' in save_df.columns:
-        # NaT（無効な日付）を排除してから保存
         save_df = save_df.dropna(subset=['DateTime'])
         save_df['DateTime'] = save_df['DateTime'].dt.strftime('%Y-%m-%d %H:%M:%S')
         
@@ -61,32 +60,22 @@ def save_to_github(new_df):
     put_res = requests.put(url, headers=headers, json=data)
     return put_res.status_code in [200, 201]
 
-# --- 共通ユーティリティ (個人分析と同じ色付けロジック) ---
+# --- 共通ユーティリティ (色付けロジック) ---
 def get_color(val, metric_name):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
-    
     if "スイング時間" in metric_name:
         base, sensitivity = 0.15, 0.05
     elif "アッパースイング度" in metric_name:
         base, sensitivity = 10.5, 15
     else:
         base, sensitivity = 105, 30
-    
     diff = val - base
     intensity = min(abs(diff) / sensitivity, 1.0)
-    
     if "スイング時間" in metric_name:
-        if diff < 0:
-            color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)"
-        else:
-            color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
+        color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff < 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
     else:
-        if diff > 0:
-            color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)"
-        else:
-            color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
-            
+        color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff > 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
     f_color = "black" if intensity < 0.4 else "white"
     return color, f_color
 
@@ -117,7 +106,7 @@ else:
     db_df = load_data_from_github()
     tab1, tab2, tab3 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録"])
 
-    # --- TAB 1: 個人分析 (元のコードを維持) ---
+    # --- TAB 1: 個人分析 (完全復元) ---
     with tab1:
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
@@ -126,8 +115,7 @@ else:
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
                 pdf['Date_Only'] = pdf['DateTime'].dt.date
-                with c2:
-                    date_range = st.date_input("分析期間", value=(pdf['Date_Only'].min(), pdf['Date_Only'].max()), key="range_tab1")
+                with c2: date_range = st.date_input("分析期間", value=(pdf['Date_Only'].min(), pdf['Date_Only'].max()), key="range_tab1")
                 with c3:
                     all_conds = pdf['スイング条件'].unique().tolist()
                     sel_conds = st.multiselect("打撃条件", all_conds, default=all_conds, key="cond_tab1")
@@ -173,7 +161,21 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-    # --- TAB 2: 比較分析 (色付けを個人分析と統一) ---
+                    st.subheader(f"📍 {target_metric}：インパクトポイント")
+                    fig_point = go.Figure()
+                    fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
+                    fig_point.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
+                    bx = 75 if hand == "左" else -75
+                    fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=160, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
+                    for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
+                        dot_color, _ = get_color(row[target_metric], target_metric)
+                        fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX']], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
+                    fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_point, use_container_width=True)
+
+    # --- TAB 2: 比較分析 (色付け以外は完全復元) ---
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
@@ -184,7 +186,6 @@ else:
             with c2:
                 all_conds_c = db_df['スイング条件'].unique().tolist()
                 sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
-            
             fdf = db_df[db_df['スイング条件'].isin(sel_conds_c)]
             is_time = "スイング時間" in comp_metric
             
@@ -195,11 +196,11 @@ else:
                 with t_cols[i]:
                     st.write(f"**{i+1}位: {name}**")
                     grid = get_3x3_grid(fdf[fdf['Player Name'] == name], comp_metric)
+                    # 元のレイアウトに戻し、色だけ get_color で指定
                     fig = go.Figure()
                     for r_idx in range(3):
                         for c_idx in range(3):
                             v = grid[r_idx, c_idx]
-                            # ここで get_color を使い、個人分析と同じ色を取得
                             color, f_color = get_color(v, comp_metric)
                             fig.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=r_idx-0.5, y1=r_idx+0.5, fillcolor=color, line=dict(color="#444", width=1))
                             if v > 0:
@@ -212,7 +213,6 @@ else:
             ca, cb = st.columns(2)
             with ca: player_a = st.selectbox("選手Aを選択", PLAYERS, key="compare_a")
             with cb: player_b = st.selectbox("選手Bを選択", PLAYERS, key="compare_b")
-            
             if player_a and player_b:
                 limit = 0.010 if is_time else 5.0
                 g_a = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric)
@@ -225,17 +225,18 @@ else:
                         for r_idx in range(3):
                             for c_idx in range(3):
                                 v, ov = mine[r_idx, c_idx], yours[r_idx, c_idx]
-                                # ここも get_color を使用
                                 color, f_color = get_color(v, comp_metric)
                                 diff = abs(v - ov) if (v > 0 and ov > 0) else 0
                                 lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
+                                better = (v < ov) if is_time else (v > ov)
+                                fc = "red" if better else "blue" # 指標の優劣による文字色
                                 fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=r_idx-0.5, y1=r_idx+0.5, fillcolor=color, line=dict(color=lc, width=lw))
                                 if v > 0:
-                                    fig_pair.add_annotation(x=c_idx, y=r_idx, text=f"{v:.1f}", showarrow=False, font=dict(color=f_color, weight="bold", size=16))
+                                    fig_pair.add_annotation(x=c_idx, y=r_idx, text=f"{v:.1f}", showarrow=False, font=dict(color=fc, weight="bold", size=16))
                         fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if PLAYER_HANDS[name]=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低'], autorange="reversed"))
                         st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
-    # --- TAB 3: データ登録 (登録失敗対策) ---
+    # --- TAB 3: データ登録 (登録対策) ---
     with tab3:
         st.title("📝 データ登録")
         c1, c2 = st.columns(2)
@@ -249,7 +250,6 @@ else:
                 input_df = input_df.rename(columns=cmap)
                 if st.button("GitHubへ保存"):
                     date_str = reg_date.strftime('%Y-%m-%d')
-                    # 結合前に time_col が空の行を削除
                     input_df = input_df.dropna(subset=['time_col'])
                     input_df['DateTime'] = pd.to_datetime(date_str + ' ' + input_df['time_col'].astype(str), errors='coerce')
                     input_df['Player Name'] = reg_player
@@ -260,6 +260,6 @@ else:
                             st.success(f"✅ {reg_player} 選手のデータを保存しました！")
                             st.rerun()
                     else:
-                        st.warning("⚠️ 有効なデータが見つかりませんでした。Excelの内容を確認してください。")
+                        st.warning("⚠️ 有効なデータが見つかりませんでした。")
             except Exception as e:
                 st.error(f"❌ エラー: {e}")
