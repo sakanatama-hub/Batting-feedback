@@ -40,7 +40,13 @@ def save_to_github(new_df):
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     res = requests.get(url, headers=headers)
     sha = res.json().get("sha") if res.status_code == 200 else None
-    csv_content = new_df.to_csv(index=False)
+    
+    # 日付を文字列に変換して保存
+    save_df = new_df.copy()
+    if 'DateTime' in save_df.columns:
+        save_df['DateTime'] = save_df['DateTime'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    
+    csv_content = save_df.to_csv(index=False)
     b64_content = base64.b64encode(csv_content.encode()).decode()
     data = {"message": "Update batting data", "content": b64_content}
     if sha: data["sha"] = sha
@@ -87,7 +93,7 @@ else:
     db_df = load_data_from_github()
     tab1, tab2, tab3 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録"])
 
-    # --- TAB 1: 個人分析 ---
+    # --- TAB 1: 個人分析 (インパクトポイント修正済み) ---
     with tab1:
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
@@ -140,7 +146,6 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True, key="p_heat_main")
 
-                    # --- インパクトポイント（画面横いっぱい ↔ 縦に長く調整） ---
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -149,7 +154,6 @@ else:
                     bx = 75 if hand == "左" else -75
                     fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=160, fillcolor="rgba(200,200,200,0.4)", line_width=0)
                     fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
-                    # ストライクゾーンの縦を強調（yの範囲を広めに描画）
                     fig_point.add_shape(type="rect", x0=-35, x1=35, y0=35, y1=135, line=dict(color="rgba(255,255,255,0.8)", width=4))
                     
                     sc, y_off = 1.2, 40
@@ -157,11 +161,10 @@ else:
                         dot_color, _ = get_color(row[target_metric], target_metric)
                         fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX'] * sc], y=[row['StrikeZoneY'] + y_off], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
                     
-                    # 修正点：use_container_width=True で横幅を最大化、heightを大きくして高さを出す
                     fig_point.update_layout(height=750, xaxis=dict(range=[-250, 250], visible=False), yaxis=dict(range=[-20, 300], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True, key="p_point_main")
 
-    # --- TAB 2: 比較分析 ---
+    # --- TAB 2: 比較分析 (修正済み) ---
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
@@ -209,15 +212,37 @@ else:
                         fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if PLAYER_HANDS[name]=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低'], autorange="reversed"))
                         st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{name}_{idx}")
 
-    # --- TAB 3: データ登録 ---
+    # --- TAB 3: データ登録 (選手名・日付選択を復活！✨) ---
     with tab3:
         st.title("📝 データ登録")
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            reg_player = st.selectbox("登録する選手を選択", PLAYERS, key="reg_p_tab3")
+        with c2:
+            reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_tab3")
+        
         uploaded_file = st.file_uploader("Excelファイルをアップロード (.xlsx)", type=["xlsx"])
+        
         if uploaded_file is not None:
             try:
                 input_df = pd.read_excel(uploaded_file)
-                st.write("📋 プレビュー:")
+                st.write("📋 読み込みプレビュー:")
                 st.dataframe(input_df.head())
+                
                 if st.button("GitHubへ保存"):
-                    st.success("✅ 登録が完了しました！")
-            except Exception as e: st.error(f"❌ エラー: {e}")
+                    # 選択された選手名と日付を各行にセット
+                    input_df['Player Name'] = reg_player
+                    # DateTime列を作成（日付のみ、または必要なら時刻も）
+                    input_df['DateTime'] = pd.to_datetime(reg_date)
+                    
+                    # 既存データに結合
+                    updated_db = pd.concat([db_df, input_df], ignore_index=True)
+                    
+                    if save_to_github(updated_db):
+                        st.success(f"✅ {reg_player} 選手のデータを {reg_date} 付で保存しました！")
+                        st.rerun() # 画面を更新して最新データを反映
+                    else:
+                        st.error("❌ GitHubへの保存に失敗しました。")
+            except Exception as e:
+                st.error(f"❌ エラーが発生しました: {e}")
