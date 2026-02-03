@@ -106,7 +106,7 @@ else:
     db_df = load_data_from_github()
     tab1, tab2, tab3 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録"])
 
-    # --- TAB 1: 個人分析 (打撃位置復元) ---
+    # --- TAB 1: 個人分析 (そのまま維持) ---
     with tab1:
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
@@ -129,30 +129,24 @@ else:
                 vdf = pdf[(pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1]) & (pdf['スイング条件'].isin(sel_conds))].copy() if isinstance(date_range, tuple) and len(date_range) == 2 else pdf.copy()
                 
                 if not vdf.empty:
-                    # --- ヒートマップ (ここを完全に復元) ---
                     st.subheader(f"📊 {target_metric}：期間内平均")
                     fig_heat = go.Figure()
-                    # スタジアム背景
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
                     L_x, L_y, R_x, R_y = 125, 140, -125, 140
                     fig_heat.add_shape(type="path", path=f"M {R_x} {R_y} L -450 600 L 450 600 L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
-                    
                     grid_side = 55
                     z_x_start, z_y_start = -(grid_side * 2.5), 180
-                    
                     def get_grid_pos(x, y):
                         r = 0 if y > SZ_Y_MAX else 1 if y > SZ_Y_TH2 else 2 if y > SZ_Y_TH1 else 3 if y > SZ_Y_MIN else 4
                         c = 0 if x < SZ_X_MIN else 1 if x < SZ_X_TH1 else 2 if x <= SZ_X_TH2 else 3 if x <= SZ_X_MAX else 4
                         return r, c
-                    
                     grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
                         r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
                         grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
                     display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
-                    
                     hand = PLAYER_HANDS.get(target_player, "右")
                     for r in range(5):
                         for c in range(5):
@@ -165,27 +159,11 @@ else:
                             if val > 0:
                                 txt = f"{val:.3f}" if "時間" in target_metric else f"{val:.1f}"
                                 fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=14, color=f_color, weight="bold"))
-                    
                     fig_heat.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="red", width=4), layer="above")
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # インパクトポイント
-                    st.subheader(f"📍 {target_metric}：インパクトポイント")
-                    fig_point = go.Figure()
-                    fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
-                    fig_point.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
-                    bx = 75 if hand == "左" else -75
-                    fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=160, fillcolor="rgba(200,200,200,0.4)", line_width=0)
-                    fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
-                    fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
-                    for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
-                        dot_color, _ = get_color(row[target_metric], target_metric)
-                        fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX']], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
-                    fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_point, use_container_width=True)
-
-    # --- TAB 2: 比較分析 ---
+    # --- TAB 2: 比較分析 (トップ3のラベルを削除してシンプルに並べる) ---
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
@@ -204,6 +182,7 @@ else:
             top3_names = top3_series.index.tolist()
             top3_scores = top3_series.values.tolist()
             
+            # 並び順: 2位, 1位, 3位
             podium_order = [1, 0, 2] if len(top3_names) >= 3 else list(range(len(top3_names)))
             t_cols = st.columns(3)
             
@@ -212,21 +191,36 @@ else:
                     name = top3_names[idx]
                     score = top3_scores[idx]
                     rank = idx + 1
+                    # 1位を大きく強調
                     h_val = 400 if rank == 1 else 320 if rank == 2 else 280
                     
                     with t_cols[i]:
-                        st.markdown(f"<div style='text-align: center;'><strong>{rank}位: {name}</strong><br><small>{score:.2f}</small></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='text-align: center; margin-bottom: 5px;'><span style='font-size: 1.2rem; font-weight: bold;'>{rank}位: {name}</span><br><span style='font-size: 1rem;'>{score:.2f}</span></div>", unsafe_allow_html=True)
                         grid = get_3x3_grid(fdf[fdf['Player Name'] == name], comp_metric)
+                        
                         fig = go.Figure()
                         for r_idx in range(3):
                             for c_idx in range(3):
                                 v = grid[r_idx, c_idx]
                                 color, f_color = get_color(v, comp_metric)
-                                fig.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=r_idx-0.5, y1=r_idx+0.5, fillcolor=color, line=dict(color="#444", width=1))
+                                fig.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=r_idx-0.5, y1=r_idx+0.5, 
+                                              fillcolor=color, line=dict(color="#333", width=2))
                                 if v > 0:
-                                    fig.add_annotation(x=c_idx, y=r_idx, text=f"{v:.1f}", showarrow=False, font=dict(color=f_color, weight="bold", size=14))
-                        fig.update_layout(height=h_val, margin=dict(l=10, r=10, t=30, b=10), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if PLAYER_HANDS.get(name)=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低'], autorange="reversed"), showlegend=False)
-                        st.plotly_chart(fig, use_container_width=True, key=f"top3_p_{rank}")
+                                    txt = f"{v:.3f}" if is_time else f"{v:.1f}"
+                                    fig.add_annotation(x=c_idx, y=r_idx, text=txt, showarrow=False, 
+                                                       font=dict(color=f_color, weight="bold", size=14))
+                        
+                        # ラベルをすべて非表示に設定
+                        fig.update_layout(
+                            height=h_val,
+                            margin=dict(l=10, r=10, t=10, b=10),
+                            xaxis=dict(visible=False, fixedrange=True),
+                            yaxis=dict(visible=False, autorange="reversed", fixedrange=True),
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            showlegend=False
+                        )
+                        st.plotly_chart(fig, use_container_width=True, key=f"top3_p_{rank}", config={'displayModeBar': False})
 
             st.markdown("---")
             st.subheader("🆚 2名ピックアップ比較")
@@ -256,7 +250,7 @@ else:
                         fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if PLAYER_HANDS.get(name)=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低'], autorange="reversed"))
                         st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
-    # --- TAB 3: データ登録 ---
+    # --- TAB 3: データ登録 (そのまま維持) ---
     with tab3:
         st.title("📝 データ登録")
         c1, c2 = st.columns(2)
