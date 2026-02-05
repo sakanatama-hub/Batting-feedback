@@ -101,7 +101,6 @@ else:
     with tab1:
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
-            # 修正箇所：全データから条件を取得（タブ2と同じロジック）
             db_df['スイング条件_str'] = db_df['スイング条件'].fillna("未設定").astype(str).str.strip()
             all_possible_conds = sorted(db_df['スイング条件_str'].unique().tolist())
 
@@ -110,14 +109,19 @@ else:
             
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
+                # 修正箇所：日付変換でエラーが出ても行を消さず、NaTとして保持する（タブ2の挙動に合わせる）
                 pdf['DateTime_dt'] = pd.to_datetime(pdf['DateTime'], errors='coerce')
                 pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
-                pdf = pdf.dropna(subset=['Date_Only'])
                 
-                min_date, max_date = pdf['Date_Only'].min(), pdf['Date_Only'].max()
+                # 期間選択肢の作成（有効な日付がある場合のみ）
+                valid_dates = pdf['Date_Only'].dropna()
+                if not valid_dates.empty:
+                    min_date, max_date = valid_dates.min(), valid_dates.max()
+                else:
+                    min_date, max_date = datetime.date(2024,1,1), datetime.date.today()
+
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3:
-                    # 全データから抽出した条件リストをマルチセレクトに適用
                     sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
                     all_cols = pdf.columns.tolist()
@@ -131,10 +135,13 @@ else:
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
                 # フィルタリング
-                pdf['スイング条件_str'] = pdf['スイング条件'].fillna("未設定").astype(str).str.strip()
                 mask = (pdf['スイング条件_str'].isin(sel_conds))
+                # 日付フィルターは、有効な日付がある行にのみ適用し、日付不明の行も「全期間」なら通すように調整
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
-                    mask &= (pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])
+                    date_mask = (pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])
+                    # 日付がNaT（不明）のデータも、期間内として扱う（タブ2に近い挙動）
+                    mask &= (date_mask | pdf['Date_Only'].isna())
+                
                 vdf = pdf[mask].copy()
 
                 if not vdf.empty and target_metric:
@@ -142,7 +149,7 @@ else:
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
                     vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
 
-                    # ヒートマップ描画 (維持)
+                    # --- ヒートマップ描画 ---
                     st.subheader(f"📊 {target_metric}：期間内平均")
                     fig_heat = go.Figure()
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
@@ -176,7 +183,7 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # インパクトポイント描画 (維持)
+                    # --- インパクトポイント描画 ---
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -192,6 +199,7 @@ else:
                     st.plotly_chart(fig_point, use_container_width=True)
 
     with tab2:
+        # (タブ2の内容は以前のまま維持)
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
             all_cols = db_df.columns.tolist()
@@ -213,8 +221,6 @@ else:
             if not fdf.empty and comp_metric:
                 fdf[comp_metric] = pd.to_numeric(fdf[comp_metric], errors='coerce')
                 is_time = "スイング時間" in comp_metric
-                
-                # 指標別トップ3 (維持)
                 st.subheader("🥇 指標別トップ3")
                 top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
                 top3_names = top3_series.index.tolist()
@@ -239,7 +245,6 @@ else:
                             st.plotly_chart(fig, use_container_width=True, key=f"top3_fix_{rank}", config={'displayModeBar': False})
 
                 st.markdown("---")
-                # 2名ピックアップ比較 (維持)
                 st.subheader("🆚 2名ピックアップ比較")
                 ca, cb = st.columns(2)
                 with ca: player_a = st.selectbox("選手Aを選択", PLAYERS, key="compare_a")
@@ -271,6 +276,7 @@ else:
                             st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
     with tab3:
+        # (タブ3の内容は以前のまま維持)
         st.title("📝 データ登録")
         c1, c2 = st.columns(2)
         with c1: reg_player = st.selectbox("登録する選手を選択", PLAYERS, key="reg_p_tab3")
