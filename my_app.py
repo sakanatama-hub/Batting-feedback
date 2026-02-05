@@ -103,26 +103,17 @@ else:
         if not db_df.empty:
             db_df['スイング条件_str'] = db_df['スイング条件'].fillna("未設定").astype(str).str.strip()
             all_possible_conds = sorted(db_df['スイング条件_str'].unique().tolist())
-
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
-            
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
-                # 修正箇所：日付変換でエラーが出ても行を消さず、NaTとして保持する（タブ2の挙動に合わせる）
                 pdf['DateTime_dt'] = pd.to_datetime(pdf['DateTime'], errors='coerce')
                 pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
-                
-                # 期間選択肢の作成（有効な日付がある場合のみ）
                 valid_dates = pdf['Date_Only'].dropna()
-                if not valid_dates.empty:
-                    min_date, max_date = valid_dates.min(), valid_dates.max()
-                else:
-                    min_date, max_date = datetime.date(2024,1,1), datetime.date.today()
-
+                min_date = valid_dates.min() if not valid_dates.empty else datetime.date(2024,1,1)
+                max_date = valid_dates.max() if not valid_dates.empty else datetime.date.today()
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
-                with c3:
-                    sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
+                with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
                     all_cols = pdf.columns.tolist()
                     try:
@@ -134,22 +125,18 @@ else:
                     sorted_metrics = [m for m in priority if m in metrics_candidates] + [m for m in metrics_candidates if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
-                # フィルタリング
                 mask = (pdf['スイング条件_str'].isin(sel_conds))
-                # 日付フィルターは、有効な日付がある行にのみ適用し、日付不明の行も「全期間」なら通すように調整
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
-                    date_mask = (pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])
-                    # 日付がNaT（不明）のデータも、期間内として扱う（タブ2に近い挙動）
-                    mask &= (date_mask | pdf['Date_Only'].isna())
-                
+                    mask &= ((pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1]) | pdf['Date_Only'].isna())
                 vdf = pdf[mask].copy()
 
                 if not vdf.empty and target_metric:
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
                     vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
+                    hand = PLAYER_HANDS.get(target_player, "右")
 
-                    # --- ヒートマップ描画 ---
+                    # --- ① 5x5 ヒートマップ ---
                     st.subheader(f"📊 {target_metric}：期間内平均")
                     fig_heat = go.Figure()
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
@@ -167,7 +154,6 @@ else:
                         r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
                         grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
                     display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
-                    hand = PLAYER_HANDS.get(target_player, "右")
                     for r in range(5):
                         for c in range(5):
                             logic_c = c if hand == "右" else (4 - c)
@@ -183,7 +169,7 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # --- インパクトポイント描画 ---
+                    # --- ② インパクトポイント (内外角の修正) ---
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -193,13 +179,14 @@ else:
                     fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
                     fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
+                        # 左打者の場合、横軸(X)のプラスマイナスを反転させてヒートマップと合わせる
+                        plot_x = -row['StrikeZoneX'] if hand == "左" else row['StrikeZoneX']
                         dot_color, _ = get_color(row[target_metric], target_metric)
-                        fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX']], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
+                        fig_point.add_trace(go.Scatter(x=[plot_x], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
                     fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True)
 
     with tab2:
-        # (タブ2の内容は以前のまま維持)
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
             all_cols = db_df.columns.tolist()
@@ -207,29 +194,25 @@ else:
                 v_idx = db_df.columns.get_loc("オンプレーンスコア")
                 all_metrics = all_cols[v_idx:]
             except: all_metrics = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
-            
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", all_metrics, key="m_tab2")
             with c2:
                 all_conds_c = sorted([str(x) for x in db_df['スイング条件'].fillna("未設定").astype(str).str.strip().unique().tolist()])
                 sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
-            
             db_df_c = db_df.copy()
             db_df_c['スイング条件_str'] = db_df_c['スイング条件'].fillna("未設定").astype(str).str.strip()
             fdf = db_df_c[db_df_c['スイング条件_str'].isin(sel_conds_c)].copy()
-            
             if not fdf.empty and comp_metric:
                 fdf[comp_metric] = pd.to_numeric(fdf[comp_metric], errors='coerce')
                 is_time = "スイング時間" in comp_metric
                 st.subheader("🥇 指標別トップ3")
                 top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
-                top3_names = top3_series.index.tolist()
-                top3_scores = top3_series.values.tolist()
+                top3_names, top3_scores = top3_series.index.tolist(), top3_series.values.tolist()
                 podium_order = [1, 0, 2] if len(top3_names) >= 3 else list(range(len(top3_names)))
                 t_cols = st.columns(3)
                 for i, idx in enumerate(podium_order):
                     if idx < len(top3_names):
-                        name = top3_names[idx]; score = top3_scores[idx]; rank = idx + 1
+                        name, score, rank = top3_names[idx], top3_scores[idx], idx + 1
                         with t_cols[i]:
                             st.markdown(f"<div style='text-align: center; background-color: #333; padding: 5px; border-radius: 5px; margin-bottom: 5px;'><span style='font-size: 1.1rem; font-weight: bold; color: white;'>{rank}位: {name}</span><br><span style='font-size: 0.9rem; color: #ddd;'>{score:.2f}</span></div>", unsafe_allow_html=True)
                             grid = get_3x3_grid(fdf[fdf['Player Name'] == name], comp_metric)
@@ -243,7 +226,6 @@ else:
                                         fig.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color=f_color, weight="bold", size=14))
                             fig.update_layout(height=350, margin=dict(l=5, r=5, t=5, b=5), xaxis=dict(visible=False, range=[-0.6, 2.6], fixedrange=True), yaxis=dict(visible=False, range=[-0.6, 2.6], fixedrange=True), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
                             st.plotly_chart(fig, use_container_width=True, key=f"top3_fix_{rank}", config={'displayModeBar': False})
-
                 st.markdown("---")
                 st.subheader("🆚 2名ピックアップ比較")
                 ca, cb = st.columns(2)
@@ -251,8 +233,7 @@ else:
                 with cb: player_b = st.selectbox("選手Bを選択", PLAYERS, key="compare_b")
                 if player_a and player_b:
                     limit = 0.010 if is_time else 5.0
-                    g_a = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric)
-                    g_b = get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
+                    g_a, g_b = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric), get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
                     p_cols = st.columns(2)
                     for idx, (name, mine, yours) in enumerate([(player_a, g_a, g_b), (player_b, g_b, g_a)]):
                         with p_cols[idx]:
@@ -263,10 +244,8 @@ else:
                                     v, ov = mine[r_idx, c_idx], yours[r_idx, c_idx]
                                     diff = abs(v - ov) if (v > 0 and ov > 0) else 0
                                     lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
-                                    if is_time:
-                                        font_c = "red" if (v < ov and v > 0 and ov > 0) else "blue" if (v > ov and v > 0 and ov > 0) else "black"
-                                    else:
-                                        font_c = "red" if (v > ov and v > 0 and ov > 0) else "blue" if (v < ov and v > 0 and ov > 0) else "black"
+                                    if is_time: font_c = "red" if (v < ov and v > 0 and ov > 0) else "blue" if (v > ov and v > 0 and ov > 0) else "black"
+                                    else: font_c = "red" if (v > ov and v > 0 and ov > 0) else "blue" if (v < ov and v > 0 and ov > 0) else "black"
                                     fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor="white", line=dict(color=lc, width=lw))
                                     if v > 0:
                                         txt = f"{v:.3f}" if is_time else f"{v:.1f}"
@@ -276,7 +255,6 @@ else:
                             st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
     with tab3:
-        # (タブ3の内容は以前のまま維持)
         st.title("📝 データ登録")
         c1, c2 = st.columns(2)
         with c1: reg_player = st.selectbox("登録する選手を選択", PLAYERS, key="reg_p_tab3")
@@ -288,8 +266,7 @@ else:
                 time_col_name = input_df.columns[0]
                 cmap = {time_col_name: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
                 input_df = input_df.rename(columns=cmap)
-                if 'スイング条件' not in input_df.columns:
-                    input_df['スイング条件'] = "未設定"
+                if 'スイング条件' not in input_df.columns: input_df['スイング条件'] = "未設定"
                 if st.button("GitHubへ追加保存"):
                     with st.spinner('保存中...'):
                         input_df['time_col'] = input_df['time_col'].astype(str)
