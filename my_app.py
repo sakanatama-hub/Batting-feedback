@@ -26,18 +26,7 @@ PLAYERS = list(PLAYER_HANDS.keys())
 def load_data_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
     try:
-        # 全ての列を一旦文字列として読み込むことで型不一致を防ぐ
         df = pd.read_csv(url, dtype=str)
-        if 'DateTime' in df.columns:
-            df['DateTime'] = pd.to_datetime(df['DateTime'], errors='coerce')
-        # 数値が必要な列を数値変換
-        num_cols = ['StrikeZoneX', 'StrikeZoneY']
-        for col in df.columns:
-            if any(x in col for x in ['速度', '角度', '時間', '度', 'スコア', '距離', '回転']):
-                num_cols.append(col)
-        for col in num_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
         return df
     except:
         return pd.DataFrame()
@@ -45,28 +34,23 @@ def load_data_from_github():
 def save_to_github(new_df):
     url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    
-    # 現在のGitHub上のファイルのSHAを取得
     res = requests.get(url, headers=headers)
     sha = res.json().get("sha") if res.status_code == 200 else None
     
-    # 保存用にすべてのデータを文字列に変換
     save_df = new_df.copy()
     for col in save_df.columns:
         save_df[col] = save_df[col].astype(str).replace('nan', '').replace('NaT', '')
         
     csv_content = save_df.to_csv(index=False)
-    # UTF-8 with BOM で保存（Excelでの文字化け防止）
     b64_content = base64.b64encode(csv_content.encode('utf-8-sig')).decode()
     
     data = {"message": f"Update data {datetime.datetime.now()}", "content": b64_content}
     if sha:
         data["sha"] = sha
-        
     put_res = requests.put(url, headers=headers, json=data)
     return (True, "成功") if put_res.status_code in [200, 201] else (False, f"エラー {put_res.status_code}")
 
-# --- 共通ユーティリティ (変更なし) ---
+# --- 共通ユーティリティ ---
 def get_color(val, metric_name):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
@@ -89,7 +73,13 @@ def get_3x3_grid(df, metric):
     grid = np.zeros((3, 3))
     counts = np.zeros((3, 3))
     if metric not in df.columns: return grid
-    valid = df.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
+    # 数値変換をここで行う
+    df_c = df.copy()
+    df_c['StrikeZoneX'] = pd.to_numeric(df_c['StrikeZoneX'], errors='coerce')
+    df_c['StrikeZoneY'] = pd.to_numeric(df_c['StrikeZoneY'], errors='coerce')
+    df_c[metric] = pd.to_numeric(df_c[metric], errors='coerce')
+    
+    valid = df_c.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
     for _, row in valid.iterrows():
         c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
         r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
@@ -120,21 +110,27 @@ else:
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
-                pdf['Date_Only'] = pd.to_datetime(pdf['DateTime'], errors='coerce').dt.date
+                pdf['DateTime_dt'] = pd.to_datetime(pdf['DateTime'], errors='coerce')
+                pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
                 pdf = pdf.dropna(subset=['Date_Only'])
                 pdf['スイング条件'] = pdf['スイング条件'].fillna("未設定").astype(str).str.strip()
+                
                 min_date, max_date = pdf['Date_Only'].min(), pdf['Date_Only'].max()
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3:
                     all_conds = sorted(pdf['スイング条件'].unique().tolist())
                     sel_conds = st.multiselect("打撃条件 (U列)", all_conds, default=all_conds, key="cond_tab1")
                 with c4:
+                    # 指標列の特定（数値化できそうな列を探す）
+                    all_cols = pdf.columns.tolist()
                     try:
                         v_idx = pdf.columns.get_loc("オンプレーンスコア")
-                        all_metrics = pdf.columns[v_idx:].tolist()
-                    except: all_metrics = []
+                        metrics_candidates = all_cols[v_idx:]
+                    except:
+                        metrics_candidates = [c for c in all_cols if "速度" in c or "スピード" in c or "角度" in c or "時間" in c]
+                    
                     priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
-                    sorted_metrics = [m for m in priority if m in all_metrics] + [m for m in all_metrics if m not in priority]
+                    sorted_metrics = [m for m in priority if m in metrics_candidates] + [m for m in metrics_candidates if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
                 mask = (pdf['スイング条件'].isin(sel_conds))
@@ -144,22 +140,31 @@ else:
 
                 if not vdf.empty and target_metric:
                     st.subheader(f"📊 {target_metric}：期間内平均")
+                    
+                    # 計算前に数値変換
+                    vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
+                    vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
+                    vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
+                    
                     fig_heat = go.Figure()
-                    # 背景描画
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
                     L_x, L_y, R_x, R_y = 125, 140, -125, 140
                     fig_heat.add_shape(type="path", path=f"M {R_x} {R_y} L -450 600 L 450 600 L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
+                    
                     grid_side = 55; z_x_start, z_y_start = -(grid_side * 2.5), 180
                     def get_grid_pos(x, y):
                         r = 0 if y > SZ_Y_MAX else 1 if y > SZ_Y_TH2 else 2 if y > SZ_Y_TH1 else 3 if y > SZ_Y_MIN else 4
                         c = 0 if x < SZ_X_MIN else 1 if x < SZ_X_TH1 else 2 if x <= SZ_X_TH2 else 3 if x <= SZ_X_MAX else 4
                         return r, c
+                    
                     grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
                         r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
-                        grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
+                        grid_val[r, c] += row[target_metric]
+                        grid_count[r, c] += 1
+                    
                     display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
                     hand = PLAYER_HANDS.get(target_player, "右")
                     for r in range(5):
@@ -173,6 +178,7 @@ else:
                             if val > 0:
                                 txt = f"{val:.3f}" if "時間" in target_metric else f"{val:.1f}"
                                 fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=14, color=f_color, weight="bold"))
+                    
                     fig_heat.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="red", width=4), layer="above")
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
@@ -180,22 +186,31 @@ else:
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
+            all_cols = db_df.columns.tolist()
             try:
                 v_idx = db_df.columns.get_loc("オンプレーンスコア")
-                all_metrics = db_df.columns[v_idx:].tolist()
-            except: all_metrics = []
+                all_metrics = all_cols[v_idx:]
+            except: all_metrics = [c for c in all_cols if "速度" in c or "スピード" in c or "角度" in c or "時間" in c]
+            
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", all_metrics, key="m_tab2")
             with c2:
                 all_conds_c = sorted([str(x) for x in db_df['スイング条件'].fillna("未設定").unique().tolist()])
                 sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
-            db_df['スイング条件_str'] = db_df['スイング条件'].fillna("未設定").astype(str).str.strip()
-            fdf = db_df[db_df['スイング条件_str'].isin(sel_conds_c)]
+            
+            db_df_c = db_df.copy()
+            db_df_c['スイング条件_str'] = db_df_c['スイング条件'].fillna("未設定").astype(str).str.strip()
+            fdf = db_df_c[db_df_c['スイング条件_str'].isin(sel_conds_c)].copy()
+            
             if not fdf.empty and comp_metric:
+                fdf[comp_metric] = pd.to_numeric(fdf[comp_metric], errors='coerce')
                 is_time = "スイング時間" in comp_metric
+                
                 st.subheader("🥇 指標別トップ3")
                 top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
-                top3_names = top3_series.index.tolist(); top3_scores = top3_series.values.tolist()
+                top3_names = top3_series.index.tolist()
+                top3_scores = top3_series.values.tolist()
+                
                 t_cols = st.columns(3)
                 for i, name in enumerate(top3_names):
                     with t_cols[i]:
@@ -219,7 +234,6 @@ else:
         if uploaded_file is not None:
             try:
                 input_df = pd.read_excel(uploaded_file)
-                # ヘッダーのリネーム処理
                 time_col_name = input_df.columns[0]
                 cmap = {time_col_name: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
                 input_df = input_df.rename(columns=cmap)
@@ -228,26 +242,16 @@ else:
                     input_df['スイング条件'] = "未設定"
                 
                 if st.button("GitHubへ追加保存"):
-                    with st.spinner('既存データと照合して保存中...'):
-                        # 新規データに選手名と日時を付与
+                    with st.spinner('保存中...'):
                         input_df['time_col'] = input_df['time_col'].astype(str)
                         date_str = reg_date.strftime('%Y-%m-%d')
                         input_df['DateTime'] = date_str + ' ' + input_df['time_col']
                         input_df['Player Name'] = reg_player
                         
-                        # 最新の全データを再読み込み
                         latest_db = load_data_from_github()
-                        
-                        # 結合
-                        if not latest_db.empty:
-                            # 既存と新規を結合。型を揃えるために一旦すべて文字列にしてから保存
-                            updated_db = pd.concat([latest_db, input_df], ignore_index=True)
-                        else:
-                            updated_db = input_df
+                        updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
                         
                         success, message = save_to_github(updated_db)
-                        if success: 
-                            st.success(f"✅ {reg_player} 選手のデータを追加しました！既存データも保持されています。")
-                            st.balloons()
+                        if success: st.success("✅ データを追加保存しました！"); st.balloons()
                         else: st.error(f"❌ 保存失敗: {message}")
             except Exception as e: st.error(f"❌ エラー: {e}")
