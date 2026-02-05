@@ -26,7 +26,6 @@ PLAYERS = list(PLAYER_HANDS.keys())
 def load_data_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
     try:
-        # 型エラー防止のため、全てを一旦文字列で読み込む
         df = pd.read_csv(url, dtype=str)
         return df
     except:
@@ -37,15 +36,11 @@ def save_to_github(new_df):
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     res = requests.get(url, headers=headers)
     sha = res.json().get("sha") if res.status_code == 200 else None
-    
     save_df = new_df.copy()
-    # 全データを文字列化して保存（欠損値対策）
     for col in save_df.columns:
         save_df[col] = save_df[col].astype(str).replace('nan', '').replace('NaT', '')
-        
     csv_content = save_df.to_csv(index=False)
     b64_content = base64.b64encode(csv_content.encode('utf-8-sig')).decode()
-    
     data = {"message": f"Update data {datetime.datetime.now()}", "content": b64_content}
     if sha:
         data["sha"] = sha
@@ -79,7 +74,6 @@ def get_3x3_grid(df, metric):
     df_c['StrikeZoneX'] = pd.to_numeric(df_c['StrikeZoneX'], errors='coerce')
     df_c['StrikeZoneY'] = pd.to_numeric(df_c['StrikeZoneY'], errors='coerce')
     df_c[metric] = pd.to_numeric(df_c[metric], errors='coerce')
-    
     valid = df_c.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
     for _, row in valid.iterrows():
         c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
@@ -107,6 +101,10 @@ else:
     with tab1:
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
+            # 修正箇所：全データから条件を取得（タブ2と同じロジック）
+            db_df['スイング条件_str'] = db_df['スイング条件'].fillna("未設定").astype(str).str.strip()
+            all_possible_conds = sorted(db_df['スイング条件_str'].unique().tolist())
+
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
             
@@ -115,13 +113,12 @@ else:
                 pdf['DateTime_dt'] = pd.to_datetime(pdf['DateTime'], errors='coerce')
                 pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
                 pdf = pdf.dropna(subset=['Date_Only'])
-                pdf['スイング条件'] = pdf['スイング条件'].fillna("未設定").astype(str).str.strip()
                 
                 min_date, max_date = pdf['Date_Only'].min(), pdf['Date_Only'].max()
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3:
-                    all_conds = sorted(pdf['スイング条件'].unique().tolist())
-                    sel_conds = st.multiselect("打撃条件 (U列)", all_conds, default=all_conds, key="cond_tab1")
+                    # 全データから抽出した条件リストをマルチセレクトに適用
+                    sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
                     all_cols = pdf.columns.tolist()
                     try:
@@ -129,23 +126,23 @@ else:
                         metrics_candidates = all_cols[v_idx:]
                     except:
                         metrics_candidates = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
-                    
                     priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
                     sorted_metrics = [m for m in priority if m in metrics_candidates] + [m for m in metrics_candidates if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
-                mask = (pdf['スイング条件'].isin(sel_conds))
+                # フィルタリング
+                pdf['スイング条件_str'] = pdf['スイング条件'].fillna("未設定").astype(str).str.strip()
+                mask = (pdf['スイング条件_str'].isin(sel_conds))
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
                     mask &= (pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])
                 vdf = pdf[mask].copy()
 
                 if not vdf.empty and target_metric:
-                    # 数値化
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
                     vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
 
-                    # --- ① 5x5 ヒートマップ ---
+                    # ヒートマップ描画 (維持)
                     st.subheader(f"📊 {target_metric}：期間内平均")
                     fig_heat = go.Figure()
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
@@ -179,7 +176,7 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # --- ② インパクトポイント (復活) ---
+                    # インパクトポイント描画 (維持)
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -201,12 +198,12 @@ else:
             try:
                 v_idx = db_df.columns.get_loc("オンプレーンスコア")
                 all_metrics = all_cols[v_idx:]
-            except: all_metrics = [c for c in all_cols if "速度" in c or "スピード" in c or "角度" in c or "時間" in c]
+            except: all_metrics = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
             
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", all_metrics, key="m_tab2")
             with c2:
-                all_conds_c = sorted([str(x) for x in db_df['スイング条件'].fillna("未設定").unique().tolist()])
+                all_conds_c = sorted([str(x) for x in db_df['スイング条件'].fillna("未設定").astype(str).str.strip().unique().tolist()])
                 sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
             
             db_df_c = db_df.copy()
@@ -217,7 +214,7 @@ else:
                 fdf[comp_metric] = pd.to_numeric(fdf[comp_metric], errors='coerce')
                 is_time = "スイング時間" in comp_metric
                 
-                # --- ③ 指標別トップ3 ---
+                # 指標別トップ3 (維持)
                 st.subheader("🥇 指標別トップ3")
                 top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
                 top3_names = top3_series.index.tolist()
@@ -242,7 +239,7 @@ else:
                             st.plotly_chart(fig, use_container_width=True, key=f"top3_fix_{rank}", config={'displayModeBar': False})
 
                 st.markdown("---")
-                # --- ④ 2名ピックアップ比較 (復活) ---
+                # 2名ピックアップ比較 (維持)
                 st.subheader("🆚 2名ピックアップ比較")
                 ca, cb = st.columns(2)
                 with ca: player_a = st.selectbox("選手Aを選択", PLAYERS, key="compare_a")
@@ -279,27 +276,22 @@ else:
         with c1: reg_player = st.selectbox("登録する選手を選択", PLAYERS, key="reg_p_tab3")
         with c2: reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_tab3")
         uploaded_file = st.file_uploader("Excelファイルをアップロード (.xlsx)", type=["xlsx"])
-        
         if uploaded_file is not None:
             try:
                 input_df = pd.read_excel(uploaded_file)
                 time_col_name = input_df.columns[0]
                 cmap = {time_col_name: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
                 input_df = input_df.rename(columns=cmap)
-                
                 if 'スイング条件' not in input_df.columns:
                     input_df['スイング条件'] = "未設定"
-                
                 if st.button("GitHubへ追加保存"):
                     with st.spinner('保存中...'):
                         input_df['time_col'] = input_df['time_col'].astype(str)
                         date_str = reg_date.strftime('%Y-%m-%d')
                         input_df['DateTime'] = date_str + ' ' + input_df['time_col']
                         input_df['Player Name'] = reg_player
-                        
                         latest_db = load_data_from_github()
                         updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
-                        
                         success, message = save_to_github(updated_db)
                         if success: st.success("✅ データを追加保存しました！"); st.balloons()
                         else: st.error(f"❌ 保存失敗: {message}")
