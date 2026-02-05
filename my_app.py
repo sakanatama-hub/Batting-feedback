@@ -108,13 +108,22 @@ else:
         if not db_df.empty:
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
+            
+            # 選手で絞り込み
             pdf = db_df[db_df['Player Name'] == target_player].copy()
+            
             if not pdf.empty:
                 pdf['Date_Only'] = pd.to_datetime(pdf['DateTime'], errors='coerce').dt.date
                 pdf = pdf.dropna(subset=['Date_Only'])
-                with c2: date_range = st.date_input("分析期間", value=(pdf['Date_Only'].min(), pdf['Date_Only'].max()), key="range_tab1")
+                
+                # --- 修正ポイント：最新の日付まで自動で範囲に含める ---
+                min_date = pdf['Date_Only'].min()
+                max_date = pdf['Date_Only'].max()
+                
+                with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3:
-                    all_conds = pdf['スイング条件'].unique().tolist()
+                    all_conds = sorted(pdf['スイング条件'].unique().tolist())
+                    # 新しい条件（Live BPなど）を確実に選択肢に含める
                     sel_conds = st.multiselect("打撃条件", all_conds, default=all_conds, key="cond_tab1")
                 with c4:
                     v_idx = pdf.columns.get_loc("オンプレーンスコア")
@@ -122,7 +131,15 @@ else:
                     priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
                     sorted_metrics = [m for m in priority if m in all_metrics] + [m for m in all_metrics if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
-                vdf = pdf[(pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1]) & (pdf['スイング条件'].isin(sel_conds))].copy() if isinstance(date_range, tuple) and len(date_range) == 2 else pdf.copy()
+
+                # フィルタリング処理の強化
+                if isinstance(date_range, tuple) and len(date_range) == 2:
+                    vdf = pdf[(pdf['Date_Only'] >= date_range[0]) & 
+                              (pdf['Date_Only'] <= date_range[1]) & 
+                              (pdf['スイング条件'].isin(sel_conds))].copy()
+                else:
+                    vdf = pdf[pdf['スイング条件'].isin(sel_conds)].copy()
+
                 if not vdf.empty:
                     st.subheader(f"📊 {target_metric}：期間内平均")
                     fig_heat = go.Figure()
@@ -170,6 +187,8 @@ else:
                         fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX']], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
                     fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True)
+                else:
+                    st.warning("選択された条件に一致するデータがありません。期間や打撃条件を確認してください。")
 
     with tab2:
         st.title("⚔️ 選手間比較分析")
@@ -179,7 +198,7 @@ else:
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", all_metrics, key="m_tab2")
             with c2:
-                all_conds_c = db_df['スイング条件'].unique().tolist()
+                all_conds_c = sorted(db_df['スイング条件'].unique().tolist())
                 sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
             fdf = db_df[db_df['スイング条件'].isin(sel_conds_c)]
             is_time = "スイング時間" in comp_metric
@@ -223,20 +242,16 @@ else:
                                 v, ov = mine[r_idx, c_idx], yours[r_idx, c_idx]
                                 diff = abs(v - ov) if (v > 0 and ov > 0) else 0
                                 lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
-                                
-                                # 高い(良い)なら赤、低い(悪い)なら青 (時間は逆転)
                                 if is_time:
                                     font_c = "red" if (v < ov and v > 0 and ov > 0) else "blue" if (v > ov and v > 0 and ov > 0) else "black"
                                 else:
                                     font_c = "red" if (v > ov and v > 0 and ov > 0) else "blue" if (v < ov and v > 0 and ov > 0) else "black"
-                                
-                                # 塗りつぶしを白(white)に変更
                                 fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor="white", line=dict(color=lc, width=lw))
                                 if v > 0:
                                     txt = f"{v:.3f}" if is_time else f"{v:.1f}"
                                     fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color=font_c, weight="bold", size=16))
                         hand_c = PLAYER_HANDS.get(name, "右")
-                        fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if hand_c=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
+                        fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if hand_c=="left" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
                         st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
     with tab3:
