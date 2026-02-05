@@ -34,7 +34,8 @@ PLAYERS = list(PLAYER_HANDS.keys())
 def load_data_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
     try:
-        df = pd.read_csv(url)
+        # スイング条件を文字列として読み込む
+        df = pd.read_csv(url, dtype={'スイング条件': str})
         if 'DateTime' in df.columns:
             df['DateTime'] = pd.to_datetime(df['DateTime'], errors='coerce')
         return df
@@ -49,6 +50,9 @@ def save_to_github(new_df):
     save_df = new_df.copy()
     if 'DateTime' in save_df.columns:
         save_df['DateTime'] = save_df['DateTime'].astype(str)
+    # 保存時もスイング条件を文字列に固定
+    if 'スイング条件' in save_df.columns:
+        save_df['スイング条件'] = save_df['スイング条件'].astype(str)
     csv_content = save_df.to_csv(index=False)
     b64_content = base64.b64encode(csv_content.encode('utf-8-sig')).decode()
     data = {"message": f"Update data {datetime.datetime.now()}", "content": b64_content}
@@ -112,13 +116,18 @@ else:
             if not pdf.empty:
                 pdf['Date_Only'] = pd.to_datetime(pdf['DateTime'], errors='coerce').dt.date
                 pdf = pdf.dropna(subset=['Date_Only'])
+                
+                # スイング条件(U列)を文字列化して欠損値を補完
+                pdf['スイング条件'] = pdf['スイング条件'].fillna("未設定").astype(str)
+                
                 min_date = pdf['Date_Only'].min()
                 max_date = pdf['Date_Only'].max()
+                
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3:
-                    # エラー修正：数値を文字列に変換してソート
-                    all_conds = sorted([str(x) for x in pdf['スイング条件'].unique().tolist()])
-                    sel_conds = st.multiselect("打撃条件", all_conds, default=all_conds, key="cond_tab1")
+                    # 全ての条件（Live BP等）を抽出してソート
+                    all_conds = sorted(pdf['スイング条件'].unique().tolist())
+                    sel_conds = st.multiselect("打撃条件 (U列)", all_conds, default=all_conds, key="cond_tab1")
                 with c4:
                     v_idx = pdf.columns.get_loc("オンプレーンスコア")
                     all_metrics = pdf.columns[v_idx:].tolist()
@@ -127,13 +136,10 @@ else:
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
                 # フィルタリング
-                pdf['スイング条件_str'] = pdf['スイング条件'].astype(str)
+                mask = (pdf['スイング条件'].isin(sel_conds))
                 if isinstance(date_range, tuple) and len(date_range) == 2:
-                    vdf = pdf[(pdf['Date_Only'] >= date_range[0]) & 
-                              (pdf['Date_Only'] <= date_range[1]) & 
-                              (pdf['スイング条件_str'].isin(sel_conds))].copy()
-                else:
-                    vdf = pdf[pdf['スイング条件_str'].isin(sel_conds)].copy()
+                    mask &= (pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])
+                vdf = pdf[mask].copy()
 
                 if not vdf.empty:
                     st.subheader(f"📊 {target_metric}：期間内平均")
@@ -193,11 +199,11 @@ else:
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", all_metrics, key="m_tab2")
             with c2:
-                # エラー修正：数値を文字列に変換してソート
-                all_conds_c = sorted([str(x) for x in db_df['スイング条件'].unique().tolist()])
+                # 比較分析側もスイング条件を文字列化してソート
+                all_conds_c = sorted([str(x) for x in db_df['スイング条件'].fillna("未設定").unique().tolist()])
                 sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
             
-            db_df['スイング条件_str'] = db_df['スイング条件'].astype(str)
+            db_df['スイング条件_str'] = db_df['スイング条件'].fillna("未設定").astype(str)
             fdf = db_df[db_df['スイング条件_str'].isin(sel_conds_c)]
             is_time = "スイング時間" in comp_metric
             
