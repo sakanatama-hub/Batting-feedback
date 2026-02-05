@@ -19,25 +19,19 @@ SZ_X_TH1, SZ_X_TH2 = -9.6, 9.6
 SZ_Y_MIN, SZ_Y_MAX = 45.0, 110.0
 SZ_Y_TH1, SZ_Y_TH2 = 66.6, 88.3
 
-PLAYER_HANDS = {
-    "#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", 
-    "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", 
-    "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", 
-    "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", 
-    "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", 
-    "#28 ポール": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", 
-    "#99 尾瀬 雄大": "左"
-}
+PLAYER_HANDS = {"#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", "#99 尾瀬 雄大": "左"}
 PLAYERS = list(PLAYER_HANDS.keys())
 
 # --- GitHub連携関数 ---
 def load_data_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
     try:
-        # スイング条件を文字列として読み込む
+        # スイング条件を文字列として読み込み
         df = pd.read_csv(url, dtype={'スイング条件': str})
         if 'DateTime' in df.columns:
             df['DateTime'] = pd.to_datetime(df['DateTime'], errors='coerce')
+        if 'スイング条件' in df.columns:
+            df['スイング条件'] = df['スイング条件'].fillna("未設定").astype(str).str.strip()
         return df
     except:
         return pd.DataFrame()
@@ -50,11 +44,10 @@ def save_to_github(new_df):
     save_df = new_df.copy()
     if 'DateTime' in save_df.columns:
         save_df['DateTime'] = save_df['DateTime'].astype(str)
-    # 保存時もスイング条件を文字列に固定
     if 'スイング条件' in save_df.columns:
-        save_df['スイング条件'] = save_df['スイング条件'].astype(str)
+        save_df['スイング条件'] = save_df['スイング条件'].astype(str).str.strip()
     csv_content = save_df.to_csv(index=False)
-    b64_content = base64.b64encode(csv_content.encode('utf-8-sig')).decode()
+    b64_content = base64.getencoder().encode(csv_content.encode('utf-8-sig')).decode() if hasattr(base64, 'getencoder') else base64.b64encode(csv_content.encode('utf-8-sig')).decode()
     data = {"message": f"Update data {datetime.datetime.now()}", "content": b64_content}
     if sha:
         data["sha"] = sha
@@ -117,15 +110,16 @@ else:
                 pdf['Date_Only'] = pd.to_datetime(pdf['DateTime'], errors='coerce').dt.date
                 pdf = pdf.dropna(subset=['Date_Only'])
                 
-                # スイング条件(U列)を文字列化して欠損値を補完
-                pdf['スイング条件'] = pdf['スイング条件'].fillna("未設定").astype(str)
+                # スイング条件(U列)を文字列化して準備
+                if 'スイング条件' not in pdf.columns:
+                    pdf['スイング条件'] = "未設定"
+                pdf['スイング条件'] = pdf['スイング条件'].fillna("未設定").astype(str).str.strip()
                 
                 min_date = pdf['Date_Only'].min()
                 max_date = pdf['Date_Only'].max()
                 
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3:
-                    # 全ての条件（Live BP等）を抽出してソート
                     all_conds = sorted(pdf['スイング条件'].unique().tolist())
                     sel_conds = st.multiselect("打撃条件 (U列)", all_conds, default=all_conds, key="cond_tab1")
                 with c4:
@@ -135,7 +129,6 @@ else:
                     sorted_metrics = [m for m in priority if m in all_metrics] + [m for m in all_metrics if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
-                # フィルタリング
                 mask = (pdf['スイング条件'].isin(sel_conds))
                 if isinstance(date_range, tuple) and len(date_range) == 2:
                     mask &= (pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])
@@ -143,6 +136,7 @@ else:
 
                 if not vdf.empty:
                     st.subheader(f"📊 {target_metric}：期間内平均")
+                    # ヒートマップ描画 (省略せず継続)
                     fig_heat = go.Figure()
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
                     L_x, L_y, R_x, R_y = 125, 140, -125, 140
@@ -199,11 +193,10 @@ else:
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", all_metrics, key="m_tab2")
             with c2:
-                # 比較分析側もスイング条件を文字列化してソート
                 all_conds_c = sorted([str(x) for x in db_df['スイング条件'].fillna("未設定").unique().tolist()])
                 sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
             
-            db_df['スイング条件_str'] = db_df['スイング条件'].fillna("未設定").astype(str)
+            db_df['スイング条件_str'] = db_df['スイング条件'].fillna("未設定").astype(str).str.strip()
             fdf = db_df[db_df['スイング条件_str'].isin(sel_conds_c)]
             is_time = "スイング時間" in comp_metric
             
@@ -271,6 +264,12 @@ else:
                 time_col_name = input_df.columns[0]
                 cmap = {time_col_name: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
                 input_df = input_df.rename(columns=cmap)
+                
+                # Excelに「スイング条件」列があるか確認。なければ作成。
+                if 'スイング条件' not in input_df.columns:
+                    # もし特定の条件（例: 全てLive BP）で登録したい場合はここを書き換えます
+                    input_df['スイング条件'] = "未設定"
+                
                 if st.button("GitHubへ保存"):
                     with st.spinner('データを送信中...'):
                         input_df['time_col'] = input_df['time_col'].astype(str)
