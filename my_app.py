@@ -108,22 +108,16 @@ else:
         if not db_df.empty:
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
-            
-            # 選手で絞り込み
             pdf = db_df[db_df['Player Name'] == target_player].copy()
-            
             if not pdf.empty:
                 pdf['Date_Only'] = pd.to_datetime(pdf['DateTime'], errors='coerce').dt.date
                 pdf = pdf.dropna(subset=['Date_Only'])
-                
-                # --- 修正ポイント：最新の日付まで自動で範囲に含める ---
                 min_date = pdf['Date_Only'].min()
                 max_date = pdf['Date_Only'].max()
-                
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3:
-                    all_conds = sorted(pdf['スイング条件'].unique().tolist())
-                    # 新しい条件（Live BPなど）を確実に選択肢に含める
+                    # エラー修正：数値を文字列に変換してソート
+                    all_conds = sorted([str(x) for x in pdf['スイング条件'].unique().tolist()])
                     sel_conds = st.multiselect("打撃条件", all_conds, default=all_conds, key="cond_tab1")
                 with c4:
                     v_idx = pdf.columns.get_loc("オンプレーンスコア")
@@ -132,13 +126,14 @@ else:
                     sorted_metrics = [m for m in priority if m in all_metrics] + [m for m in all_metrics if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
-                # フィルタリング処理の強化
+                # フィルタリング
+                pdf['スイング条件_str'] = pdf['スイング条件'].astype(str)
                 if isinstance(date_range, tuple) and len(date_range) == 2:
                     vdf = pdf[(pdf['Date_Only'] >= date_range[0]) & 
                               (pdf['Date_Only'] <= date_range[1]) & 
-                              (pdf['スイング条件'].isin(sel_conds))].copy()
+                              (pdf['スイング条件_str'].isin(sel_conds))].copy()
                 else:
-                    vdf = pdf[pdf['スイング条件'].isin(sel_conds)].copy()
+                    vdf = pdf[pdf['スイング条件_str'].isin(sel_conds)].copy()
 
                 if not vdf.empty:
                     st.subheader(f"📊 {target_metric}：期間内平均")
@@ -188,7 +183,7 @@ else:
                     fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True)
                 else:
-                    st.warning("選択された条件に一致するデータがありません。期間や打撃条件を確認してください。")
+                    st.warning("選択された条件に一致するデータがありません。")
 
     with tab2:
         st.title("⚔️ 選手間比較分析")
@@ -198,10 +193,14 @@ else:
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", all_metrics, key="m_tab2")
             with c2:
-                all_conds_c = sorted(db_df['スイング条件'].unique().tolist())
+                # エラー修正：数値を文字列に変換してソート
+                all_conds_c = sorted([str(x) for x in db_df['スイング条件'].unique().tolist()])
                 sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
-            fdf = db_df[db_df['スイング条件'].isin(sel_conds_c)]
+            
+            db_df['スイング条件_str'] = db_df['スイング条件'].astype(str)
+            fdf = db_df[db_df['スイング条件_str'].isin(sel_conds_c)]
             is_time = "スイング時間" in comp_metric
+            
             st.subheader("🥇 指標別トップ3")
             top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
             top3_names = top3_series.index.tolist(); top3_scores = top3_series.values.tolist()
@@ -251,7 +250,7 @@ else:
                                     txt = f"{v:.3f}" if is_time else f"{v:.1f}"
                                     fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color=font_c, weight="bold", size=16))
                         hand_c = PLAYER_HANDS.get(name, "右")
-                        fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if hand_c=="left" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
+                        fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if hand_c=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
                         st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
     with tab3:
