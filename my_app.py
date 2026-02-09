@@ -107,9 +107,16 @@ else:
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
+                # --- ここから修正部分 ---
                 pdf['DateTime_dt'] = pd.to_datetime(pdf['DateTime'], errors='coerce')
-                pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
-                valid_dates = pdf['Date_Only'].dropna()
+                # DateTime_dtが全てNaTでないかチェックしてから.dt.dateを適用
+                if not pdf['DateTime_dt'].isna().all():
+                    pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
+                else:
+                    pdf['Date_Only'] = None
+                # --- ここまで修正部分 ---
+                
+                valid_dates = pdf['Date_Only'].dropna() if 'Date_Only' in pdf.columns and pdf['Date_Only'] is not None else pd.Series()
                 min_date = valid_dates.min() if not valid_dates.empty else datetime.date(2024,1,1)
                 max_date = valid_dates.max() if not valid_dates.empty else datetime.date.today()
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
@@ -127,7 +134,8 @@ else:
 
                 mask = (pdf['スイング条件_str'].isin(sel_conds))
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
-                    mask &= ((pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1]) | pdf['Date_Only'].isna())
+                    if 'Date_Only' in pdf.columns and pdf['Date_Only'] is not None:
+                        mask &= ((pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1]) | pdf['Date_Only'].isna())
                 vdf = pdf[mask].copy()
 
                 if not vdf.empty and target_metric:
@@ -179,7 +187,6 @@ else:
                     fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
                     fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
-                        # 左打者の場合、横軸(X)のプラスマイナスを反転させてヒートマップと合わせる
                         plot_x = -row['StrikeZoneX'] if hand == "左" else row['StrikeZoneX']
                         dot_color, _ = get_color(row[target_metric], target_metric)
                         fig_point.add_trace(go.Scatter(x=[plot_x], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
