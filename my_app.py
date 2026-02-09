@@ -107,18 +107,15 @@ else:
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
-                # --- 日付処理修正箇所 ---
+                # --- 日付処理 ---
                 pdf['DateTime_dt'] = pd.to_datetime(pdf['DateTime'], errors='coerce')
-                # 列全体がDatetime型として有効な場合のみ.dt.dateを実行。無効ならNoneの列を作成
                 if pd.api.types.is_datetime64_any_dtype(pdf['DateTime_dt']) and not pdf['DateTime_dt'].isna().all():
                     pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
                 else:
                     pdf['Date_Only'] = pd.Series([None] * len(pdf)).values
                 
-                # 集計用に一時的にDatetime変換して有効な日付を取得
                 temp_dates = pd.to_datetime(pdf['Date_Only']).dropna()
                 valid_dates = temp_dates if not temp_dates.empty else pd.Series()
-                # --- 修正ここまで ---
 
                 min_date = valid_dates.min().date() if not valid_dates.empty else datetime.date(2024,1,1)
                 max_date = valid_dates.max().date() if not valid_dates.empty else datetime.date.today()
@@ -137,7 +134,6 @@ else:
 
                 mask = (pdf['スイング条件_str'].isin(sel_conds))
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
-                    # Date_Onlyが存在する場合のみフィルタ適用
                     if 'Date_Only' in pdf.columns:
                         mask &= ((pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1]) | pdf['Date_Only'].isna())
                 vdf = pdf[mask].copy()
@@ -168,7 +164,8 @@ else:
                     display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
                     for r in range(5):
                         for c in range(5):
-                            logic_c = c if hand == "右" else (4 - c)
+                            # 反転をやめて列をそのまま使用
+                            logic_c = c 
                             x0, x1 = z_x_start + c * grid_side, z_x_start + (c + 1) * grid_side
                             y0, y1 = z_y_start + (4 - r) * grid_side, z_y_start + (5 - r) * grid_side
                             val = display_grid[r, logic_c]
@@ -181,7 +178,7 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # --- ② インパクトポイント (内外角の修正) ---
+                    # --- ② インパクトポイント ---
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -191,7 +188,8 @@ else:
                     fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
                     fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
-                        plot_x = -row['StrikeZoneX'] if hand == "左" else row['StrikeZoneX']
+                        # 反転をやめて座標をそのまま使用
+                        plot_x = row['StrikeZoneX']
                         dot_color, _ = get_color(row[target_metric], target_metric)
                         fig_point.add_trace(go.Scatter(x=[plot_x], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
                     fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
@@ -262,7 +260,8 @@ else:
                                         txt = f"{v:.3f}" if is_time else f"{v:.1f}"
                                         fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color=font_c, weight="bold", size=16))
                             hand_c = PLAYER_HANDS.get(name, "右")
-                            fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['外','中','内'] if hand_c=="左" else ['内','中','外'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
+                            # 比較タブのラベルも一応固定（データの左右通り）
+                            fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['左','中','右'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
                             st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
     with tab3:
