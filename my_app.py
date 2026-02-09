@@ -107,18 +107,21 @@ else:
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
-                # --- ここから修正部分 ---
+                # --- 日付処理修正箇所 ---
                 pdf['DateTime_dt'] = pd.to_datetime(pdf['DateTime'], errors='coerce')
-                # DateTime_dtが全てNaTでないかチェックしてから.dt.dateを適用
-                if not pdf['DateTime_dt'].isna().all():
+                # 列全体がDatetime型として有効な場合のみ.dt.dateを実行。無効ならNoneの列を作成
+                if pd.api.types.is_datetime64_any_dtype(pdf['DateTime_dt']) and not pdf['DateTime_dt'].isna().all():
                     pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
                 else:
-                    pdf['Date_Only'] = None
-                # --- ここまで修正部分 ---
+                    pdf['Date_Only'] = pd.Series([None] * len(pdf)).values
                 
-                valid_dates = pdf['Date_Only'].dropna() if 'Date_Only' in pdf.columns and pdf['Date_Only'] is not None else pd.Series()
-                min_date = valid_dates.min() if not valid_dates.empty else datetime.date(2024,1,1)
-                max_date = valid_dates.max() if not valid_dates.empty else datetime.date.today()
+                # 集計用に一時的にDatetime変換して有効な日付を取得
+                temp_dates = pd.to_datetime(pdf['Date_Only']).dropna()
+                valid_dates = temp_dates if not temp_dates.empty else pd.Series()
+                # --- 修正ここまで ---
+
+                min_date = valid_dates.min().date() if not valid_dates.empty else datetime.date(2024,1,1)
+                max_date = valid_dates.max().date() if not valid_dates.empty else datetime.date.today()
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
@@ -134,7 +137,8 @@ else:
 
                 mask = (pdf['スイング条件_str'].isin(sel_conds))
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
-                    if 'Date_Only' in pdf.columns and pdf['Date_Only'] is not None:
+                    # Date_Onlyが存在する場合のみフィルタ適用
+                    if 'Date_Only' in pdf.columns:
                         mask &= ((pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1]) | pdf['Date_Only'].isna())
                 vdf = pdf[mask].copy()
 
