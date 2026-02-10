@@ -107,13 +107,20 @@ else:
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
-                # --- 日付処理修正 ---
+                # --- 日付処理 (エラー回避型に修正) ---
                 pdf['DateTime_dt'] = pd.to_datetime(pdf['DateTime'], errors='coerce')
-                pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
                 
-                temp_dates = pdf['Date_Only'].dropna()
-                min_date = temp_dates.min() if not temp_dates.empty else datetime.date(2024,1,1)
-                max_date = temp_dates.max() if not temp_dates.empty else datetime.date.today()
+                # dtアクセサを使う前に日付型であることを確認
+                if pd.api.types.is_datetime64_any_dtype(pdf['DateTime_dt']):
+                    pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
+                else:
+                    pdf['Date_Only'] = pd.Series([None] * len(pdf)).values
+
+                temp_dates = pd.to_datetime(pdf['Date_Only']).dropna()
+                valid_dates = temp_dates if not temp_dates.empty else pd.Series()
+
+                min_date = valid_dates.min().date() if not valid_dates.empty else datetime.date(2024,1,1)
+                max_date = valid_dates.max().date() if not valid_dates.empty else datetime.date.today()
                 
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
@@ -128,11 +135,12 @@ else:
                     sorted_metrics = [m for m in priority if m in metrics_candidates] + [m for m in metrics_candidates if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
-                # --- フィルタリング条件修正 ---
+                # --- フィルタリング条件 (isna()を除外して期間を厳密に反映) ---
                 mask = (pdf['スイング条件_str'].isin(sel_conds))
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
-                    # isna()を除外し、厳密に選択期間内のみを抽出
-                    mask &= (pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])
+                    if 'Date_Only' in pdf.columns:
+                        # 期間指定に厳密に一致するデータのみ抽出
+                        mask &= ((pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1]))
                 vdf = pdf[mask].copy()
 
                 if not vdf.empty and target_metric:
@@ -272,7 +280,7 @@ else:
                 if 'スイング条件' not in input_df.columns: input_df['スイング条件'] = "未設定"
                 if st.button("GitHubへ追加保存"):
                     with st.spinner('保存中...'):
-                        # 日付と時間を結合してDateTime列を作成
+                        # --- データ登録時の日付結合 ---
                         date_str = reg_date.strftime('%Y-%m-%d')
                         input_df['time_col'] = input_df['time_col'].astype(str)
                         input_df['DateTime'] = date_str + ' ' + input_df['time_col']
