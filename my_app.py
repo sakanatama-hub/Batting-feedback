@@ -118,7 +118,6 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
-                    # --- 指標リストのフィルタリング ---
                     all_cols = pdf.columns.tolist()
                     try:
                         v_idx = pdf.columns.get_loc("オンプレーンスコア")
@@ -126,15 +125,11 @@ else:
                     except:
                         candidates = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
                     
-                    # 日本語が含まれている指標のみ、または特定の重要指標に絞り込む
                     valid_metrics = []
                     for c in candidates:
-                        # 数値に変換してみて、少なくとも1つは有効な数値がある列だけを採用
                         check_vals = pd.to_numeric(pdf[c], errors='coerce')
-                        if not check_vals.dropna().empty:
-                            # かつ、英語名(LaunchAngle等)を除外するため日本語を含むかチェック
-                            if any(ord(char) > 255 for char in c): 
-                                valid_metrics.append(c)
+                        if not check_vals.dropna().empty and any(ord(char) > 255 for char in c):
+                            valid_metrics.append(c)
 
                     priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
                     sorted_metrics = [m for m in priority if m in valid_metrics] + [m for m in valid_metrics if m not in priority]
@@ -165,7 +160,35 @@ else:
                         with col_m3:
                             st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
-                    st.subheader(f"📊 {target_metric}：ゾーン別平均")
+                    # --- 月別推移グラフの追加 ---
+                    st.subheader(f"📈 {target_metric}：月別推移")
+                    # 月ごとの集計（YYYY-MM形式）
+                    pdf_for_graph = pdf.copy()
+                    pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
+                    pdf_for_graph['Month'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.strftime('%Y-%m')
+                    
+                    # 分析対象の条件でフィルタリング（期間は全期間見えたほうが面白いのでここでは絞らないか、お好みで）
+                    graph_df = pdf_for_graph[pdf_for_graph['スイング条件_str'].isin(sel_conds)].dropna(subset=[target_metric])
+                    
+                    if not graph_df.empty:
+                        monthly_stats = graph_df.groupby('Month')[target_metric].agg(['mean', 'max', 'min']).reset_index()
+                        monthly_stats = monthly_stats.sort_values('Month')
+
+                        fig_trend = go.Figure()
+                        # MAX/MINの線（時間ならMIN、それ以外ならMAX）
+                        is_time = "時間" in target_metric
+                        trend_best_label = "月間最速(MIN)" if is_time else "月間最大(MAX)"
+                        trend_best_val = monthly_stats['min'] if is_time else monthly_stats['max']
+                        
+                        fig_trend.add_trace(go.Scatter(x=monthly_stats['Month'], y=trend_best_val, name=trend_best_label, line=dict(color='#FF4B4B', width=4), mode='lines+markers'))
+                        # 平均の線
+                        fig_trend.add_trace(go.Scatter(x=monthly_stats['Month'], y=monthly_stats['mean'], name="月間平均", line=dict(color='#0068C9', width=3, dash='dot'), mode='lines+markers'))
+                        
+                        fig_trend.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                        st.plotly_chart(fig_trend, use_container_width=True)
+                    
+                    # --- ① 5x5 ヒートマップ ---
+                    st.subheader(f"📊 {target_metric}：ゾーン別平均（選択期間）")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
                     hand = PLAYER_HANDS.get(target_player, "右")
@@ -225,7 +248,6 @@ else:
                 all_metrics = all_cols[v_idx:]
             except: all_metrics = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
             
-            # 比較タブでも同様にフィルタリング
             valid_comp_metrics = []
             for c in all_metrics:
                 check_vals = pd.to_numeric(db_df[c], errors='coerce')
@@ -245,7 +267,7 @@ else:
                 is_time = "スイング時間" in comp_metric
                 st.subheader("🥇 指標別トップ3")
                 top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
-                top3_names, top3_scores = top3_series.index.tolist(), top3_series.values.tolist()
+                top3_names, top3_scores = top3_series.index.tolist(), top3_scores.values.tolist()
                 podium_order = [1, 0, 2] if len(top3_names) >= 3 else list(range(len(top3_names)))
                 t_cols = st.columns(3)
                 for i, idx in enumerate(podium_order):
@@ -265,7 +287,7 @@ else:
                             fig.update_layout(height=350, margin=dict(l=5, r=5, t=5, b=5), xaxis=dict(visible=False, range=[-0.6, 2.6], fixedrange=True), yaxis=dict(visible=False, range=[-0.6, 2.6], fixedrange=True), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
                             st.plotly_chart(fig, use_container_width=True, key=f"top3_fix_{rank}", config={'displayModeBar': False})
                 st.markdown("---")
-                st.subheader("🆚 2名ピックアップ comparison")
+                st.subheader("🆚 2名ピックアップ比較")
                 ca, cb = st.columns(2)
                 with ca: player_a = st.selectbox("選手Aを選択", PLAYERS, key="compare_a")
                 with cb: player_b = st.selectbox("選手Bを選択", PLAYERS, key="compare_b")
