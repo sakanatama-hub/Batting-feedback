@@ -142,7 +142,7 @@ else:
                 vdf = pdf[mask].copy()
 
                 if vdf.empty:
-                    st.warning(f"⚠️ {date_range[0]} 〜 {date_range[1]} の期間に一致するデータがありません。")
+                    st.warning(f"⚠️ 一致するデータがありません。")
                 else:
                     vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
                     valid_vals = vdf[target_metric].dropna()
@@ -150,7 +150,6 @@ else:
                     if not valid_vals.empty:
                         m_max = valid_vals.min() if "時間" in target_metric else valid_vals.max()
                         m_avg = valid_vals.mean()
-                        
                         col_m1, col_m2, col_m3 = st.columns([2, 2, 4])
                         with col_m1:
                             label = "MIN" if "時間" in target_metric else "MAX"
@@ -160,39 +159,28 @@ else:
                         with col_m3:
                             st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
-                    # --- 月別推移グラフの追加 ---
                     st.subheader(f"📈 {target_metric}：月別推移")
-                    # 月ごとの集計（YYYY-MM形式）
                     pdf_for_graph = pdf.copy()
                     pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
                     pdf_for_graph['Month'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.strftime('%Y-%m')
-                    
-                    # 分析対象の条件でフィルタリング（期間は全期間見えたほうが面白いのでここでは絞らないか、お好みで）
                     graph_df = pdf_for_graph[pdf_for_graph['スイング条件_str'].isin(sel_conds)].dropna(subset=[target_metric])
                     
                     if not graph_df.empty:
                         monthly_stats = graph_df.groupby('Month')[target_metric].agg(['mean', 'max', 'min']).reset_index()
                         monthly_stats = monthly_stats.sort_values('Month')
-
                         fig_trend = go.Figure()
-                        # MAX/MINの線（時間ならMIN、それ以外ならMAX）
                         is_time = "時間" in target_metric
                         trend_best_label = "月間最速(MIN)" if is_time else "月間最大(MAX)"
                         trend_best_val = monthly_stats['min'] if is_time else monthly_stats['max']
-                        
                         fig_trend.add_trace(go.Scatter(x=monthly_stats['Month'], y=trend_best_val, name=trend_best_label, line=dict(color='#FF4B4B', width=4), mode='lines+markers'))
-                        # 平均の線
                         fig_trend.add_trace(go.Scatter(x=monthly_stats['Month'], y=monthly_stats['mean'], name="月間平均", line=dict(color='#0068C9', width=3, dash='dot'), mode='lines+markers'))
-                        
                         fig_trend.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                         st.plotly_chart(fig_trend, use_container_width=True)
                     
-                    # --- ① 5x5 ヒートマップ ---
-                    st.subheader(f"📊 {target_metric}：ゾーン別平均（選択期間）")
+                    st.subheader(f"📊 {target_metric}：ゾーン別平均")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
                     hand = PLAYER_HANDS.get(target_player, "右")
-
                     fig_heat = go.Figure()
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
                     L_x, L_y, R_x, R_y = 125, 140, -125, 140
@@ -211,11 +199,9 @@ else:
                     display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
                     for r in range(5):
                         for c in range(5):
-                            logic_c = c 
                             x0, x1 = z_x_start + c * grid_side, z_x_start + (c + 1) * grid_side
                             y0, y1 = z_y_start + (4 - r) * grid_side, z_y_start + (5 - r) * grid_side
-                            val = display_grid[r, logic_c]
-                            color, f_color = get_color(val, target_metric)
+                            val = display_grid[r, c]; color, f_color = get_color(val, target_metric)
                             fig_heat.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1))
                             if val > 0:
                                 txt = f"{val:.3f}" if "時間" in target_metric else f"{val:.1f}"
@@ -247,13 +233,11 @@ else:
                 v_idx = db_df.columns.get_loc("オンプレーンスコア")
                 all_metrics = all_cols[v_idx:]
             except: all_metrics = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
-            
             valid_comp_metrics = []
             for c in all_metrics:
                 check_vals = pd.to_numeric(db_df[c], errors='coerce')
                 if not check_vals.dropna().empty and any(ord(char) > 255 for char in c):
                     valid_comp_metrics.append(c)
-
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", valid_comp_metrics, key="m_tab2")
             with c2:
@@ -267,7 +251,8 @@ else:
                 is_time = "スイング時間" in comp_metric
                 st.subheader("🥇 指標別トップ3")
                 top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
-                top3_names, top3_scores = top3_series.index.tolist(), top3_scores.values.tolist()
+                top3_names = top3_series.index.tolist()
+                top3_scores = top3_series.values.tolist() # ここを修正しました
                 podium_order = [1, 0, 2] if len(top3_names) >= 3 else list(range(len(top3_names)))
                 t_cols = st.columns(3)
                 for i, idx in enumerate(podium_order):
@@ -331,11 +316,10 @@ else:
                         date_str = reg_date.strftime('%Y-%m-%d')
                         input_df['time_col'] = input_df['time_col'].astype(str).str.strip()
                         input_df['DateTime'] = date_str + ' ' + input_df['time_col']
-                        
                         input_df['Player Name'] = reg_player
                         latest_db = load_data_from_github()
                         updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
                         success, message = save_to_github(updated_db)
-                        if success: st.success(f"✅ {reg_player} のデータを {date_str} 分として追加保存しました！"); st.balloons()
+                        if success: st.success(f"✅ 保存しました！"); st.balloons()
                         else: st.error(f"❌ 保存失敗: {message}")
             except Exception as e: st.error(f"❌ エラー: {e}")
