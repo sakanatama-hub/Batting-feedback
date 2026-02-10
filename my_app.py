@@ -107,18 +107,14 @@ else:
             with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
-                # --- 日付処理 ---
+                # --- 日付処理修正 ---
                 pdf['DateTime_dt'] = pd.to_datetime(pdf['DateTime'], errors='coerce')
-                if pd.api.types.is_datetime64_any_dtype(pdf['DateTime_dt']) and not pdf['DateTime_dt'].isna().all():
-                    pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
-                else:
-                    pdf['Date_Only'] = pd.Series([None] * len(pdf)).values
+                pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
                 
-                temp_dates = pd.to_datetime(pdf['Date_Only']).dropna()
-                valid_dates = temp_dates if not temp_dates.empty else pd.Series()
-
-                min_date = valid_dates.min().date() if not valid_dates.empty else datetime.date(2024,1,1)
-                max_date = valid_dates.max().date() if not valid_dates.empty else datetime.date.today()
+                temp_dates = pdf['Date_Only'].dropna()
+                min_date = temp_dates.min() if not temp_dates.empty else datetime.date(2024,1,1)
+                max_date = temp_dates.max() if not temp_dates.empty else datetime.date.today()
+                
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
@@ -132,10 +128,11 @@ else:
                     sorted_metrics = [m for m in priority if m in metrics_candidates] + [m for m in metrics_candidates if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
+                # --- フィルタリング条件修正 ---
                 mask = (pdf['スイング条件_str'].isin(sel_conds))
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
-                    if 'Date_Only' in pdf.columns:
-                        mask &= ((pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1]) | pdf['Date_Only'].isna())
+                    # isna()を除外し、厳密に選択期間内のみを抽出
+                    mask &= (pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])
                 vdf = pdf[mask].copy()
 
                 if not vdf.empty and target_metric:
@@ -164,7 +161,6 @@ else:
                     display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
                     for r in range(5):
                         for c in range(5):
-                            # 反転をやめて列をそのまま使用
                             logic_c = c 
                             x0, x1 = z_x_start + c * grid_side, z_x_start + (c + 1) * grid_side
                             y0, y1 = z_y_start + (4 - r) * grid_side, z_y_start + (5 - r) * grid_side
@@ -188,7 +184,6 @@ else:
                     fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
                     fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
-                        # 反転をやめて座標をそのまま使用
                         plot_x = row['StrikeZoneX']
                         dot_color, _ = get_color(row[target_metric], target_metric)
                         fig_point.add_trace(go.Scatter(x=[plot_x], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
@@ -259,8 +254,6 @@ else:
                                     if v > 0:
                                         txt = f"{v:.3f}" if is_time else f"{v:.1f}"
                                         fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=txt, showarrow=False, font=dict(color=font_c, weight="bold", size=16))
-                            hand_c = PLAYER_HANDS.get(name, "右")
-                            # 比較タブのラベルも一応固定（データの左右通り）
                             fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['左','中','右'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
                             st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
@@ -279,13 +272,15 @@ else:
                 if 'スイング条件' not in input_df.columns: input_df['スイング条件'] = "未設定"
                 if st.button("GitHubへ追加保存"):
                     with st.spinner('保存中...'):
-                        input_df['time_col'] = input_df['time_col'].astype(str)
+                        # 日付と時間を結合してDateTime列を作成
                         date_str = reg_date.strftime('%Y-%m-%d')
+                        input_df['time_col'] = input_df['time_col'].astype(str)
                         input_df['DateTime'] = date_str + ' ' + input_df['time_col']
+                        
                         input_df['Player Name'] = reg_player
                         latest_db = load_data_from_github()
                         updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
                         success, message = save_to_github(updated_db)
-                        if success: st.success("✅ データを追加保存しました！"); st.balloons()
+                        if success: st.success(f"✅ {reg_player} のデータを {date_str} 分として追加保存しました！"); st.balloons()
                         else: st.error(f"❌ 保存失敗: {message}")
             except Exception as e: st.error(f"❌ エラー: {e}")
