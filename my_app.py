@@ -159,24 +159,7 @@ else:
                         with col_m3:
                             st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
-                    st.subheader(f"📈 {target_metric}：月別推移")
-                    pdf_for_graph = pdf.copy()
-                    pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
-                    pdf_for_graph['Month'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.strftime('%Y-%m')
-                    graph_df = pdf_for_graph[pdf_for_graph['スイング条件_str'].isin(sel_conds)].dropna(subset=[target_metric])
-                    
-                    if not graph_df.empty:
-                        monthly_stats = graph_df.groupby('Month')[target_metric].agg(['mean', 'max', 'min']).reset_index()
-                        monthly_stats = monthly_stats.sort_values('Month')
-                        fig_trend = go.Figure()
-                        is_time = "時間" in target_metric
-                        trend_best_label = "月間最速(MIN)" if is_time else "月間最大(MAX)"
-                        trend_best_val = monthly_stats['min'] if is_time else monthly_stats['max']
-                        fig_trend.add_trace(go.Scatter(x=monthly_stats['Month'], y=trend_best_val, name=trend_best_label, line=dict(color='#FF4B4B', width=4), mode='lines+markers'))
-                        fig_trend.add_trace(go.Scatter(x=monthly_stats['Month'], y=monthly_stats['mean'], name="月間平均", line=dict(color='#0068C9', width=3, dash='dot'), mode='lines+markers'))
-                        fig_trend.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-                        st.plotly_chart(fig_trend, use_container_width=True)
-                    
+                    # ① 5x5 ヒートマップ
                     st.subheader(f"📊 {target_metric}：ゾーン別平均")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
@@ -210,6 +193,7 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
+                    # ② インパクトポイント
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -224,6 +208,39 @@ else:
                         fig_point.add_trace(go.Scatter(x=[plot_x], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
                     fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True)
+
+                    # ③ 月別推移グラフ（一番下に配置）
+                    st.subheader(f"📈 {target_metric}：月別推移")
+                    pdf_for_graph = pdf.copy()
+                    pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
+                    # 日付から「○月」のみを抽出
+                    pdf_for_graph['Month_Name'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.month.astype(str) + "月"
+                    pdf_for_graph['Month_Sort'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.strftime('%Y-%m')
+                    
+                    graph_df = pdf_for_graph[pdf_for_graph['スイング条件_str'].isin(sel_conds)].dropna(subset=[target_metric])
+                    
+                    if not graph_df.empty:
+                        # ソート用の月でグループ化してから表示用の月名を出す
+                        monthly_stats = graph_df.groupby(['Month_Sort', 'Month_Name'])[target_metric].agg(['mean', 'max', 'min']).reset_index()
+                        monthly_stats = monthly_stats.sort_values('Month_Sort')
+
+                        fig_trend = go.Figure()
+                        is_time = "時間" in target_metric
+                        trend_best_label = "月間最速(MIN)" if is_time else "月間最大(MAX)"
+                        trend_best_val = monthly_stats['min'] if is_time else monthly_stats['max']
+                        
+                        fig_trend.add_trace(go.Scatter(x=monthly_stats['Month_Name'], y=trend_best_val, name=trend_best_label, line=dict(color='#FF4B4B', width=4), mode='lines+markers'))
+                        fig_trend.add_trace(go.Scatter(x=monthly_stats['Month_Name'], y=monthly_stats['mean'], name="月間平均", line=dict(color='#0068C9', width=3, dash='dot'), mode='lines+markers'))
+                        
+                        fig_trend.update_layout(
+                            height=350, 
+                            margin=dict(l=20, r=20, t=20, b=20), 
+                            hovermode="x unified", 
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                            yaxis=dict(range=[0, None]), # Y軸の最小値を0に固定
+                            xaxis=dict(type='category') # 文字列として扱うことで余計な数値を消す
+                        )
+                        st.plotly_chart(fig_trend, use_container_width=True)
 
     with tab2:
         st.title("⚔️ 選手間比較分析")
@@ -252,7 +269,7 @@ else:
                 st.subheader("🥇 指標別トップ3")
                 top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
                 top3_names = top3_series.index.tolist()
-                top3_scores = top3_series.values.tolist() # ここを修正しました
+                top3_scores = top3_series.values.tolist()
                 podium_order = [1, 0, 2] if len(top3_names) >= 3 else list(range(len(top3_names)))
                 t_cols = st.columns(3)
                 for i, idx in enumerate(podium_order):
