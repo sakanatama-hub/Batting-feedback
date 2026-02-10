@@ -63,12 +63,12 @@ def get_color(val, metric_name, row_idx=None):
             color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)"
         elif val < low:
             diff = low - val
-            grad_sensitivity = 15.0 # 緩やかなグラデーション設定を維持
+            grad_sensitivity = 15.0
             intensity = min(diff / grad_sensitivity, 1.0)
             color = f"rgba({int(255*(1-intensity))}, 255, {int(255*(1-intensity))}, 0.9)"
         else:
             diff = val - high
-            grad_sensitivity = 15.0 # 緩やかなグラデーション設定を維持
+            grad_sensitivity = 15.0
             intensity = min(diff / grad_sensitivity, 1.0)
             color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
         return color, "black"
@@ -130,6 +130,7 @@ else:
             if not pdf.empty:
                 pdf['Date_Only_Str'] = pdf['DateTime'].str[:10]
                 pdf['Date_Only'] = pd.to_datetime(pdf['Date_Only_Str'], errors='coerce').dt.date
+
                 valid_dates = pdf['Date_Only'].dropna()
                 min_date = min(valid_dates) if not valid_dates.empty else datetime.date(2024,1,1)
                 max_date = max(valid_dates) if not valid_dates.empty else datetime.date.today()
@@ -143,7 +144,13 @@ else:
                         candidates = all_cols[v_idx:]
                     except:
                         candidates = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
-                    valid_metrics = [c for c in candidates if pd.to_numeric(pdf[c], errors='coerce').dropna().any() and any(ord(char) > 255 for char in c)]
+                    
+                    valid_metrics = []
+                    for c in candidates:
+                        check_vals = pd.to_numeric(pdf[c], errors='coerce')
+                        if not check_vals.dropna().empty and any(ord(char) > 255 for char in c):
+                            valid_metrics.append(c)
+
                     priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
                     sorted_metrics = [m for m in priority if m in valid_metrics] + [m for m in valid_metrics if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
@@ -151,45 +158,104 @@ else:
                 mask = (pdf['スイング条件_str'].isin(sel_conds))
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
                     mask &= (pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])
+                
                 vdf = pdf[mask].copy()
 
-                if not vdf.empty:
+                if vdf.empty:
+                    st.warning(f"⚠️ 一致するデータがありません。")
+                else:
                     vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
                     valid_vals = vdf[target_metric].dropna()
+                    
                     if not valid_vals.empty:
                         m_max = valid_vals.min() if "時間" in target_metric else valid_vals.max()
                         m_avg = valid_vals.mean()
                         col_m1, col_m2, col_m3 = st.columns([2, 2, 4])
-                        with col_m1: st.metric(label=f"期間内 {'MIN' if '時間' in target_metric else 'MAX'}", value=f"{m_max:.3f}" if "時間" in target_metric else f"{m_max:.1f}")
-                        with col_m2: st.metric(label="期間内 平均", value=f"{m_avg:.3f}" if "時間" in target_metric else f"{m_avg:.1f}")
-                        with col_m3: st.info(f"💡 {len(vdf)}件のスイングを分析中")
+                        with col_m1:
+                            label = "MIN" if "時間" in target_metric else "MAX"
+                            st.metric(label=f"期間内 {label}", value=f"{m_max:.3f}" if "時間" in target_metric else f"{m_max:.1f}")
+                        with col_m2:
+                            st.metric(label="期間内 平均", value=f"{m_avg:.3f}" if "時間" in target_metric else f"{m_avg:.1f}")
+                        with col_m3:
+                            st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
+                    # ヒートマップ
                     st.subheader(f"📊 {target_metric}：ゾーン別平均")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
+                    hand = PLAYER_HANDS.get(target_player, "右")
                     fig_heat = go.Figure()
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
-                    fig_heat.add_shape(type="path", path=f"M -125 140 L -450 600 L 450 600 L 125 140 Z", fillcolor="#8B4513", line_width=0, layer="below")
+                    L_x, L_y, R_x, R_y = 125, 140, -125, 140
+                    fig_heat.add_shape(type="path", path=f"M {R_x} {R_y} L -450 600 L 450 600 L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
                     grid_side = 55; z_x_start, z_y_start = -(grid_side * 2.5), 180
+                    def get_grid_pos(x, y):
+                        r = 0 if y > SZ_Y_MAX else 1 if y > SZ_Y_TH2 else 2 if y > SZ_Y_TH1 else 3 if y > SZ_Y_MIN else 4
+                        c = 0 if x < SZ_X_MIN else 1 if x < SZ_X_TH1 else 2 if x <= SZ_X_TH2 else 3 if x <= SZ_X_MAX else 4
+                        return r, c
                     grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
-                        r = 0 if row['StrikeZoneY'] > SZ_Y_MAX else 1 if row['StrikeZoneY'] > SZ_Y_TH2 else 2 if row['StrikeZoneY'] > SZ_Y_TH1 else 3 if row['StrikeZoneY'] > SZ_Y_MIN else 4
-                        c = 0 if row['StrikeZoneX'] < SZ_X_MIN else 1 if row['StrikeZoneX'] < SZ_X_TH1 else 2 if row['StrikeZoneX'] <= SZ_X_TH2 else 3 if row['StrikeZoneX'] <= SZ_X_MAX else 4
+                        r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
                         grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
                     display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
                     for r in range(5):
                         for c in range(5):
                             x0, x1 = z_x_start + c * grid_side, z_x_start + (c + 1) * grid_side
                             y0, y1 = z_y_start + (4 - r) * grid_side, z_y_start + (5 - r) * grid_side
-                            color, f_color = get_color(display_grid[r, c], target_metric, row_idx=max(0, min(2, r - 1)))
+                            val = display_grid[r, c]
+                            mapped_r = max(0, min(2, r - 1))
+                            color, f_color = get_color(val, target_metric, row_idx=mapped_r)
                             fig_heat.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1))
-                            if display_grid[r, c] > 0:
-                                fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=f"{display_grid[r,c]:.3f}" if "時間" in target_metric else f"{display_grid[r,c]:.1f}", showarrow=False, font=dict(size=14, color=f_color, weight="bold"))
+                            if val > 0:
+                                txt = f"{val:.3f}" if "時間" in target_metric else f"{val:.1f}"
+                                fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=14, color=f_color, weight="bold"))
                     fig_heat.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="red", width=4), layer="above")
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
+
+                    # インパクトポイント (正常に戻した部分)
+                    st.subheader(f"📍 {target_metric}：インパクトポイント")
+                    fig_point = go.Figure()
+                    fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
+                    fig_point.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
+                    bx = 75 if hand == "左" else -75
+                    fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=160, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
+                    for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
+                        plot_x = row['StrikeZoneX']
+                        r_pt = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
+                        dot_color, _ = get_color(row[target_metric], target_metric, row_idx=r_pt)
+                        fig_point.add_trace(go.Scatter(x=[plot_x], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
+                    fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_point, use_container_width=True)
+
+                    # 月別推移
+                    st.subheader(f"📈 {target_metric}：月別推移")
+                    pdf_for_graph = pdf.copy()
+                    pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
+                    pdf_for_graph['Month_Name'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.month.astype(str) + "月"
+                    pdf_for_graph['Month_Sort'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.strftime('%Y-%m')
+                    
+                    graph_df = pdf_for_graph[pdf_for_graph['スイング条件_str'].isin(sel_conds)].dropna(subset=[target_metric])
+                    
+                    if not graph_df.empty:
+                        monthly_stats = graph_df.groupby(['Month_Sort', 'Month_Name'])[target_metric].agg(['mean', 'max', 'min']).reset_index()
+                        monthly_stats = monthly_stats.sort_values('Month_Sort')
+                        fig_trend = go.Figure()
+                        is_time = "時間" in target_metric
+                        trend_best_label = "月間最速(MIN)" if is_time else "月間最大(MAX)"
+                        trend_best_val = monthly_stats['min'] if is_time else monthly_stats['max']
+                        fig_trend.add_trace(go.Scatter(x=monthly_stats['Month_Name'], y=trend_best_val, name=trend_best_label, line=dict(color='#FF4B4B', width=4), mode='lines+markers'))
+                        fig_trend.add_trace(go.Scatter(x=monthly_stats['Month_Name'], y=monthly_stats['mean'], name="月間平均", line=dict(color='#0068C9', width=3, dash='dot'), mode='lines+markers'))
+                        fig_trend.update_layout(
+                            height=350, margin=dict(l=20, r=20, t=20, b=20), hovermode="x unified", 
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                            yaxis=dict(rangemode="tozero"), xaxis=dict(type='category')
+                        )
+                        st.plotly_chart(fig_trend, use_container_width=True)
 
     with tab2:
         st.title("⚔️ 選手間比較分析")
@@ -219,7 +285,7 @@ else:
                 st.subheader(f"🥇 {'理想範囲への的中率' if is_upper else '指標別'} トップ3")
                 
                 if is_upper:
-                    # アッパースイング度の的中率計算によるランキング
+                    # 的中率計算ランキング
                     def check_success(row):
                         val, y = row[comp_metric], row['StrikeZoneY']
                         if pd.isna(val) or pd.isna(y): return None
@@ -231,7 +297,6 @@ else:
                     top3_series = fdf.groupby('Player Name')['is_success'].mean().sort_values(ascending=False).head(3)
                     top3_scores = [f"{s*100:.1f}%" for s in top3_series.values]
                 else:
-                    # 通常指標の平均値ランキング
                     top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
                     top3_scores = [f"{s:.3f}" if is_time else f"{s:.1f}" for s in top3_series.values]
 
