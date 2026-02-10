@@ -67,15 +67,15 @@ def get_color(val, metric_name, row_idx=None):
             intensity = 1.0 - (abs(val - base) / sensitivity)
             color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)"
         elif val < low:
-            # 範囲より低い: 白から緑へ
+            # 範囲より低い: 白から緑へ (緩やかに変化)
             diff = low - val
-            grad_sensitivity = 5.0 # 5度差でMAX緑
+            grad_sensitivity = 15.0 # 値を大きくしてグラデーションを緩やかに
             intensity = min(diff / grad_sensitivity, 1.0)
             color = f"rgba({int(255*(1-intensity))}, 255, {int(255*(1-intensity))}, 0.9)"
         else: # val > high
-            # 範囲より高い: 白から青へ
+            # 範囲より高い: 白から青へ (緩やかに変化)
             diff = val - high
-            grad_sensitivity = 5.0 # 5度差でMAX青
+            grad_sensitivity = 15.0 # 値を大きくしてグラデーションを緩やかに
             intensity = min(diff / grad_sensitivity, 1.0)
             color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
         
@@ -214,7 +214,6 @@ else:
                             x0, x1 = z_x_start + c * grid_side, z_x_start + (c + 1) * grid_side
                             y0, y1 = z_y_start + (4 - r) * grid_side, z_y_start + (5 - r) * grid_side
                             val = display_grid[r, c]
-                            # アッパースイング度判定用に高さをマッピング (r=1,2,3の部分を0,1,2に対応させる)
                             mapped_r = max(0, min(2, r - 1))
                             color, f_color = get_color(val, target_metric, row_idx=mapped_r)
                             fig_heat.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1))
@@ -236,14 +235,13 @@ else:
                     fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
                         plot_x = row['StrikeZoneX']
-                        # インパクトポイント用は高さ情報を取得して色付け
                         r_pt = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
                         dot_color, _ = get_color(row[target_metric], target_metric, row_idx=r_pt)
                         fig_point.add_trace(go.Scatter(x=[plot_x], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
                     fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True)
 
-                    # 月別推移（一番下に配置）
+                    # 月別推移
                     st.subheader(f"📈 {target_metric}：月別推移")
                     pdf_for_graph = pdf.copy()
                     pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
@@ -262,12 +260,9 @@ else:
                         fig_trend.add_trace(go.Scatter(x=monthly_stats['Month_Name'], y=trend_best_val, name=trend_best_label, line=dict(color='#FF4B4B', width=4), mode='lines+markers'))
                         fig_trend.add_trace(go.Scatter(x=monthly_stats['Month_Name'], y=monthly_stats['mean'], name="月間平均", line=dict(color='#0068C9', width=3, dash='dot'), mode='lines+markers'))
                         fig_trend.update_layout(
-                            height=350, 
-                            margin=dict(l=20, r=20, t=20, b=20), 
-                            hovermode="x unified", 
+                            height=350, margin=dict(l=20, r=20, t=20, b=20), hovermode="x unified", 
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                            yaxis=dict(rangemode="tozero"), # ここを修正：原点を必ず0にする
-                            xaxis=dict(type='category')
+                            yaxis=dict(rangemode="tozero"), xaxis=dict(type='category')
                         )
                         st.plotly_chart(fig_trend, use_container_width=True)
 
