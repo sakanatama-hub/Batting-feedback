@@ -108,13 +108,13 @@ else:
             
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
-                # --- 日付処理 (より強力な変換) ---
-                pdf['DateTime_dt'] = pd.to_datetime(pdf['DateTime'], errors='coerce')
-                pdf['Date_Only'] = pdf['DateTime_dt'].dt.date
+                # --- 日付処理 (DateTime列の先頭10文字[YYYY-MM-DD]を日付として抽出) ---
+                pdf['Date_Only_Str'] = pdf['DateTime'].str[:10]
+                pdf['Date_Only'] = pd.to_datetime(pdf['Date_Only_Str'], errors='coerce').dt.date
 
                 valid_dates = pdf['Date_Only'].dropna()
-                min_date = valid_dates.min() if not valid_dates.empty else datetime.date(2024,1,1)
-                max_date = valid_dates.max() if not valid_dates.empty else datetime.date.today()
+                min_date = min(valid_dates) if not valid_dates.empty else datetime.date(2024,1,1)
+                max_date = max(valid_dates) if not valid_dates.empty else datetime.date.today()
                 
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
@@ -129,21 +129,17 @@ else:
                     sorted_metrics = [m for m in priority if m in metrics_candidates] + [m for m in metrics_candidates if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
-                # --- フィルタリング ---
+                # --- フィルタリング (登録時の日付と期間指定を厳密に比較) ---
                 mask = (pdf['スイング条件_str'].isin(sel_conds))
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
-                    # 厳密に日付を比較 (DateTimeが壊れていてもDate_Onlyがあれば通る)
                     mask &= (pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])
                 
                 vdf = pdf[mask].copy()
 
-                # --- デバッグ表示 (データが出ない原因を特定するため) ---
                 if vdf.empty:
-                    st.warning(f"⚠️ 選択された条件（期間: {date_range}）に一致するデータが見つかりませんでした。")
-                    if not pdf.empty:
-                        st.info(f"ヒント: {target_player} の全データ数は {len(pdf)} 件です。登録されている日付を確認してください。")
+                    st.warning(f"⚠️ {date_range[0]} 〜 {date_range[1]} の期間に一致するデータがありません。")
                 else:
-                    st.success(f"✅ {len(vdf)} 件のデータを表示中")
+                    st.success(f"✅ {len(vdf)} 件を表示中")
 
                 if not vdf.empty and target_metric:
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
@@ -282,9 +278,10 @@ else:
                 if 'スイング条件' not in input_df.columns: input_df['スイング条件'] = "未設定"
                 if st.button("GitHubへ追加保存"):
                     with st.spinner('保存中...'):
+                        # --- 【重要】カレンダーで選んだ日付を DateTime 列に書き込む ---
                         date_str = reg_date.strftime('%Y-%m-%d')
-                        # 時間データが数値（シリアル値）の場合の対策
                         input_df['time_col'] = input_df['time_col'].astype(str).str.strip()
+                        # ここで「選んだ日付 + 時間」という形式で保存する
                         input_df['DateTime'] = date_str + ' ' + input_df['time_col']
                         
                         input_df['Player Name'] = reg_player
