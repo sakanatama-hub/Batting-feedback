@@ -108,7 +108,6 @@ else:
             
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
-                # --- 日付処理 (DateTime列の先頭10文字[YYYY-MM-DD]を日付として抽出) ---
                 pdf['Date_Only_Str'] = pdf['DateTime'].str[:10]
                 pdf['Date_Only'] = pd.to_datetime(pdf['Date_Only_Str'], errors='coerce').dt.date
 
@@ -129,7 +128,6 @@ else:
                     sorted_metrics = [m for m in priority if m in metrics_candidates] + [m for m in metrics_candidates if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
-                # --- フィルタリング (登録時の日付と期間指定を厳密に比較) ---
                 mask = (pdf['スイング条件_str'].isin(sel_conds))
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
                     mask &= (pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])
@@ -139,16 +137,29 @@ else:
                 if vdf.empty:
                     st.warning(f"⚠️ {date_range[0]} 〜 {date_range[1]} の期間に一致するデータがありません。")
                 else:
-                    st.success(f"✅ {len(vdf)} 件を表示中")
-
-                if not vdf.empty and target_metric:
-                    vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
-                    vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
+                    # --- MAXと平均の表示エリア ---
                     vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
-                    hand = PLAYER_HANDS.get(target_player, "右")
+                    valid_vals = vdf[target_metric].dropna()
+                    
+                    if not valid_vals.empty:
+                        m_max = valid_vals.min() if "時間" in target_metric else valid_vals.max()
+                        m_avg = valid_vals.mean()
+                        
+                        col_m1, col_m2, col_m3 = st.columns([2, 2, 4])
+                        with col_m1:
+                            label = "MIN" if "時間" in target_metric else "MAX"
+                            st.metric(label=f"期間内 {label}", value=f"{m_max:.3f}" if "時間" in target_metric else f"{m_max:.1f}")
+                        with col_m2:
+                            st.metric(label="期間内 平均", value=f"{m_avg:.3f}" if "時間" in target_metric else f"{m_avg:.1f}")
+                        with col_m3:
+                            st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
                     # --- ① 5x5 ヒートマップ ---
-                    st.subheader(f"📊 {target_metric}：期間内平均")
+                    st.subheader(f"📊 {target_metric}：ゾーン別平均")
+                    vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
+                    vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
+                    hand = PLAYER_HANDS.get(target_player, "右")
+
                     fig_heat = go.Figure()
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
                     L_x, L_y, R_x, R_y = 125, 140, -125, 140
@@ -278,10 +289,8 @@ else:
                 if 'スイング条件' not in input_df.columns: input_df['スイング条件'] = "未設定"
                 if st.button("GitHubへ追加保存"):
                     with st.spinner('保存中...'):
-                        # --- 【重要】カレンダーで選んだ日付を DateTime 列に書き込む ---
                         date_str = reg_date.strftime('%Y-%m-%d')
                         input_df['time_col'] = input_df['time_col'].astype(str).str.strip()
-                        # ここで「選んだ日付 + 時間」という形式で保存する
                         input_df['DateTime'] = date_str + ' ' + input_df['time_col']
                         
                         input_df['Player Name'] = reg_player
