@@ -118,14 +118,26 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
+                    # --- 指標リストのフィルタリング ---
                     all_cols = pdf.columns.tolist()
                     try:
                         v_idx = pdf.columns.get_loc("オンプレーンスコア")
-                        metrics_candidates = all_cols[v_idx:]
+                        candidates = all_cols[v_idx:]
                     except:
-                        metrics_candidates = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
+                        candidates = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
+                    
+                    # 日本語が含まれている指標のみ、または特定の重要指標に絞り込む
+                    valid_metrics = []
+                    for c in candidates:
+                        # 数値に変換してみて、少なくとも1つは有効な数値がある列だけを採用
+                        check_vals = pd.to_numeric(pdf[c], errors='coerce')
+                        if not check_vals.dropna().empty:
+                            # かつ、英語名(LaunchAngle等)を除外するため日本語を含むかチェック
+                            if any(ord(char) > 255 for char in c): 
+                                valid_metrics.append(c)
+
                     priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
-                    sorted_metrics = [m for m in priority if m in metrics_candidates] + [m for m in metrics_candidates if m not in priority]
+                    sorted_metrics = [m for m in priority if m in valid_metrics] + [m for m in valid_metrics if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
                 mask = (pdf['スイング条件_str'].isin(sel_conds))
@@ -137,7 +149,6 @@ else:
                 if vdf.empty:
                     st.warning(f"⚠️ {date_range[0]} 〜 {date_range[1]} の期間に一致するデータがありません。")
                 else:
-                    # --- MAXと平均の表示エリア ---
                     vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
                     valid_vals = vdf[target_metric].dropna()
                     
@@ -154,7 +165,6 @@ else:
                         with col_m3:
                             st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
-                    # --- ① 5x5 ヒートマップ ---
                     st.subheader(f"📊 {target_metric}：ゾーン別平均")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
@@ -191,7 +201,6 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # --- ② インパクトポイント ---
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -215,8 +224,16 @@ else:
                 v_idx = db_df.columns.get_loc("オンプレーンスコア")
                 all_metrics = all_cols[v_idx:]
             except: all_metrics = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
+            
+            # 比較タブでも同様にフィルタリング
+            valid_comp_metrics = []
+            for c in all_metrics:
+                check_vals = pd.to_numeric(db_df[c], errors='coerce')
+                if not check_vals.dropna().empty and any(ord(char) > 255 for char in c):
+                    valid_comp_metrics.append(c)
+
             c1, c2 = st.columns(2)
-            with c1: comp_metric = st.selectbox("比較指標", all_metrics, key="m_tab2")
+            with c1: comp_metric = st.selectbox("比較指標", valid_comp_metrics, key="m_tab2")
             with c2:
                 all_conds_c = sorted([str(x) for x in db_df['スイング条件'].fillna("未設定").astype(str).str.strip().unique().tolist()])
                 sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
@@ -248,7 +265,7 @@ else:
                             fig.update_layout(height=350, margin=dict(l=5, r=5, t=5, b=5), xaxis=dict(visible=False, range=[-0.6, 2.6], fixedrange=True), yaxis=dict(visible=False, range=[-0.6, 2.6], fixedrange=True), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
                             st.plotly_chart(fig, use_container_width=True, key=f"top3_fix_{rank}", config={'displayModeBar': False})
                 st.markdown("---")
-                st.subheader("🆚 2名ピックアップ比較")
+                st.subheader("🆚 2名ピックアップ comparison")
                 ca, cb = st.columns(2)
                 with ca: player_a = st.selectbox("選手Aを選択", PLAYERS, key="compare_a")
                 with cb: player_b = st.selectbox("選手Bを選択", PLAYERS, key="compare_b")
