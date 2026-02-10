@@ -48,13 +48,42 @@ def save_to_github(new_df):
     return (True, "成功") if put_res.status_code in [200, 201] else (False, f"エラー {put_res.status_code}")
 
 # --- 共通ユーティリティ ---
-def get_color(val, metric_name):
+def get_color(val, metric_name, row_idx=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
+    
+    # アッパースイング度の特殊定義
+    if "アッパースイング度" in metric_name and row_idx is not None:
+        if row_idx == 0:  # 高め
+            base, low, high = 6.5, 3.0, 10.0
+        elif row_idx == 1:  # 真ん中
+            base, low, high = 11.5, 8.0, 15.0
+        else:  # 低め (row_idx=2)
+            base, low, high = 15.0, 10.0, 20.0
+            
+        if low <= val <= high:
+            # 指定範囲内: 中心(base)が一番濃い赤、端(low/high)が白
+            sensitivity = (high - low) / 2
+            intensity = 1.0 - (abs(val - base) / sensitivity)
+            color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)"
+        elif val < low:
+            # 範囲より低い: 白から緑へ
+            diff = low - val
+            grad_sensitivity = 5.0 # 5度差でMAX緑
+            intensity = min(diff / grad_sensitivity, 1.0)
+            color = f"rgba({int(255*(1-intensity))}, 255, {int(255*(1-intensity))}, 0.9)"
+        else: # val > high
+            # 範囲より高い: 白から青へ
+            diff = val - high
+            grad_sensitivity = 5.0 # 5度差でMAX青
+            intensity = min(diff / grad_sensitivity, 1.0)
+            color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
+        
+        return color, "black"
+
+    # 通常の指標
     if "スイング時間" in metric_name:
         base, sensitivity = 0.15, 0.05
-    elif "アッパースイング度" in metric_name:
-        base, sensitivity = 10.5, 15
     else:
         base, sensitivity = 105, 30
     diff = val - base
@@ -184,7 +213,10 @@ else:
                         for c in range(5):
                             x0, x1 = z_x_start + c * grid_side, z_x_start + (c + 1) * grid_side
                             y0, y1 = z_y_start + (4 - r) * grid_side, z_y_start + (5 - r) * grid_side
-                            val = display_grid[r, c]; color, f_color = get_color(val, target_metric)
+                            val = display_grid[r, c]
+                            # アッパースイング度判定用に高さをマッピング (r=1,2,3の部分を0,1,2に対応させる)
+                            mapped_r = max(0, min(2, r - 1))
+                            color, f_color = get_color(val, target_metric, row_idx=mapped_r)
                             fig_heat.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1))
                             if val > 0:
                                 txt = f"{val:.3f}" if "時間" in target_metric else f"{val:.1f}"
@@ -204,7 +236,9 @@ else:
                     fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
                         plot_x = row['StrikeZoneX']
-                        dot_color, _ = get_color(row[target_metric], target_metric)
+                        # インパクトポイント用は高さ情報を取得して色付け
+                        r_pt = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
+                        dot_color, _ = get_color(row[target_metric], target_metric, row_idx=r_pt)
                         fig_point.add_trace(go.Scatter(x=[plot_x], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
                     fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True)
@@ -276,7 +310,7 @@ else:
                             fig = go.Figure()
                             for r_idx in range(3):
                                 for c_idx in range(3):
-                                    v = grid[r_idx, c_idx]; color, f_color = get_color(v, comp_metric)
+                                    v = grid[r_idx, c_idx]; color, f_color = get_color(v, comp_metric, row_idx=r_idx)
                                     fig.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=color, line=dict(color="#222", width=2))
                                     if v > 0:
                                         txt = f"{v:.3f}" if is_time else f"{v:.1f}"
