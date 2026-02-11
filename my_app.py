@@ -52,7 +52,7 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # --- 【新規】白固定にする項目（飛距離、打球方向、バット角度関連） ---
+    # --- 白固定にする項目（飛距離、打球方向、バット角度関連） ---
     neutral_metrics = ["飛距離", "打球方向", "バットの角度", "打球角度", "回転数", "ExitVelocity"]
     if any(m in metric_name for m in neutral_metrics):
         return "rgba(255, 255, 255, 0.3)", "black"
@@ -372,8 +372,9 @@ else:
                 if player_a and player_b:
                     limit = 0.010 if is_time else 5.0
                     g_a, e_a = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric)
-                    g_b, e_b = get_3x3_grid(fdf[fdf['Player Name'] == player_b], num_metric=comp_metric)
-                    # get_3x3_gridは前回の修正で引数を調整済み
+                    # --- ここが修正箇所 ---
+                    g_b, e_b = get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
+                    # ----------------------
                     p_cols = st.columns(2)
                     for idx, (name, mine, yours) in enumerate([(player_a, g_a, g_b), (player_b, g_b, g_a)]):
                         with p_cols[idx]:
