@@ -61,19 +61,16 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
     if "打球角度" in metric_name:
         center = 15.0
         if 8.0 <= val <= 22.0:
-            # 15度を最大(1.0)とする赤のグラデーション
             dist = abs(val - center)
-            intensity = 1.0 - (dist / 7.0)  # 8or22で0.0、15で1.0
+            intensity = 1.0 - (dist / 7.0) # 15度で1.0
             gb_val = int(255 * (1 - intensity))
             return f"rgba(255, {gb_val}, {gb_val}, 0.9)", "white" if intensity > 0.5 else "black"
         elif val < 8.0:
-            # 8度以下はだんだん緑に
             dist = min(abs(8.0 - val), 15.0)
             intensity = dist / 15.0
             rb_val = int(255 * (1 - intensity))
             return f"rgba({rb_val}, 255, {rb_val}, 0.9)", "black"
         else:
-            # 22度以上はだんだん青に
             dist = min(abs(val - 22.0), 15.0)
             intensity = dist / 15.0
             rg_val = int(255 * (1 - intensity))
@@ -90,15 +87,16 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
     # --- 手の最大スピード (効率ベース) ---
     if "手の最大スピード" in metric_name:
         eff = eff_val if eff_val is not None else val
-        if eff < 2.7: return "rgba(0, 128, 0, 0.9)", "white"
-        elif eff < 3.0: return "rgba(144, 238, 144, 0.9)", "black"
+        if eff < 2.7: color, f_color = "rgba(0, 128, 0, 0.9)", "white"
+        elif eff < 3.0: color, f_color = "rgba(144, 238, 144, 0.9)", "black"
         elif 3.0 <= eff <= 3.2:
             dist = abs(eff - 3.1)
             intensity = 1.0 - (dist / 0.1) if dist <= 0.1 else 0.0
             gb_val = int(255 * (1 - intensity))
-            return f"rgba(255, {gb_val}, {gb_val}, 0.9)", "white" if intensity > 0.5 else "black"
-        elif eff <= 3.4: return "rgba(173, 216, 230, 0.9)", "black"
-        else: return "rgba(0, 0, 255, 0.9)", "white"
+            color, f_color = f"rgba(255, {gb_val}, {gb_val}, 0.9)", "white" if intensity > 0.5 else "black"
+        elif eff <= 3.4: color, f_color = "rgba(173, 216, 230, 0.9)", "black"
+        else: color, f_color = "rgba(0, 0, 255, 0.9)", "white"
+        return color, f_color
 
     # --- パワー ---
     if "パワー" in metric_name:
@@ -108,13 +106,22 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
         elif val <= 4.5: return "rgba(255, 182, 193, 0.9)", "black"
         else: return "rgba(255, 0, 0, 0.9)", "white"
 
+    # --- 体の回転によるバットの加速の大きさ ---
+    if "体の回転によるバットの加速の大きさ" in metric_name:
+        if val <= 5: return "rgba(0, 0, 255, 0.9)", "white"
+        elif val <= 10: return "rgba(173, 216, 230, 0.9)", "black"
+        elif val <= 14: return "rgba(255, 255, 255, 0.9)", "black"
+        elif val <= 20: return "rgba(255, 182, 193, 0.9)", "black"
+        else: return "rgba(255, 0, 0, 0.9)", "white"
+
     # --- アッパースイング度判定 ---
     if "アッパースイング度" in metric_name and row_idx is not None:
         if row_idx == 0: base, low, high = 6.5, 3.0, 10.0
         elif row_idx == 1: base, low, high = 11.5, 8.0, 15.0
         else: base, low, high = 15.0, 10.0, 20.0
         if low <= val <= high:
-            intensity = 1.0 - (abs(val - base) / ((high - low) / 2))
+            sensitivity = (high - low) / 2
+            intensity = 1.0 - (abs(val - base) / sensitivity)
             return f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)", "black"
         elif val < low:
             intensity = min((low - val) / 15.0, 1.0)
@@ -122,6 +129,16 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
         else:
             intensity = min((val - high) / 15.0, 1.0)
             return f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)", "black"
+
+    # --- バットスピード ---
+    if "バットスピード" in metric_name:
+        if val < 100: return "rgba(0, 0, 255, 0.9)", "white"
+        elif 100 <= val <= 110: return "rgba(255, 255, 255, 0.9)", "black"
+        elif 110 < val < 120:
+            intensity = (val - 110) / 10
+            gb_val = int(255 * (1 - intensity))
+            return f"rgba(255, {gb_val}, {gb_val}, 0.9)", "black" if intensity < 0.6 else "white"
+        else: return "rgba(255, 0, 0, 0.9)", "white"
 
     # --- スイング時間 ---
     if "スイング時間" in metric_name:
@@ -136,7 +153,8 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
     diff = val - base
     intensity = min(abs(diff) / sensitivity, 1.0)
     color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff > 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
-    return color, "black" if intensity < 0.4 else "white"
+    f_color = "black" if intensity < 0.4 else "white"
+    return color, f_color
 
 def get_3x3_grid(df, metric):
     grid = np.zeros((3, 3)); counts = np.zeros((3, 3)); eff_grid = np.zeros((3, 3))
@@ -146,17 +164,21 @@ def get_3x3_grid(df, metric):
     df_c['StrikeZoneY'] = pd.to_numeric(df_c['StrikeZoneY'], errors='coerce')
     is_hand = "手の最大スピード" in metric and "バットスピード (km/h)" in df_c.columns
     df_c[metric] = pd.to_numeric(df_c[metric], errors='coerce')
-    if is_hand: df_c['eff_calc'] = pd.to_numeric(df_c['バットスピード (km/h)'], errors='coerce') / df_c[metric]
+    if is_hand:
+        df_c['eff_calc'] = pd.to_numeric(df_c['バットスピード (km/h)'], errors='coerce') / df_c[metric]
     valid = df_c.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
     for _, row in valid.iterrows():
         c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
         r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
         grid[r, c] += row[metric]; counts[r, c] += 1
         if is_hand: eff_grid[r, c] += row['eff_calc']
-    return np.where(counts > 0, grid / counts, 0), (np.where(counts > 0, eff_grid / counts, 0) if is_hand else None)
+    final_grid = np.where(counts > 0, grid / counts, 0)
+    final_eff = np.where(counts > 0, eff_grid / counts, 0) if is_hand else None
+    return final_grid, final_eff
 
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
 if "ok" not in st.session_state: st.session_state["ok"] = False
+
 if not st.session_state["ok"]:
     st.title("⚾️ TOYOTA BASEBALL CLUB")
     val = st.text_input("PASSWORD", type="password")
@@ -177,7 +199,7 @@ else:
             if not pdf.empty:
                 pdf['Date_Only_Str'] = pdf['DateTime'].str[:10]
                 pdf['Date_Only'] = pd.to_datetime(pdf['Date_Only_Str'], errors='coerce').dt.date
-                with c2: date_range = st.date_input("分析期間", value=(min(pdf['Date_Only']), max(pdf['Date_Only'])), key="range_tab1")
+                with c2: date_range = st.date_input("分析期間", value=(min(pdf['Date_Only'].dropna()), max(pdf['Date_Only'].dropna())), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
                     all_cols = pdf.columns.tolist()
@@ -198,12 +220,17 @@ else:
                     is_hand_m = "手の最大スピード" in target_metric and "バットスピード (km/h)" in vdf.columns
                     if is_hand_m: vdf['eff_calc'] = pd.to_numeric(vdf['バットスピード (km/h)'], errors='coerce') / vdf[target_metric]
                     
+                    m_avg = vdf[target_metric].mean()
+                    st.metric(label="期間内 平均", value=f"{m_avg:.3f}" if "時間" in target_metric else f"{m_avg:.1f}")
+
                     st.subheader(f"📊 {target_metric}：ゾーン別平均")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
+                    hand = PLAYER_HANDS.get(target_player, "右")
                     fig_heat = go.Figure()
                     fig_heat.add_shape(type="rect", x0=-500, x1=500, y0=-100, y1=600, fillcolor="#1a4314", line_width=0, layer="below")
-                    fig_heat.add_shape(type="path", path="M -125 140 L -450 600 L 450 600 L 125 140 Z", fillcolor="#8B4513", line_width=0, layer="below")
+                    L_x, L_y, R_x, R_y = 125, 140, -125, 140
+                    fig_heat.add_shape(type="path", path=f"M {R_x} {R_y} L -450 600 L 450 600 L {L_x} {L_y} Z", fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
                     
@@ -225,11 +252,27 @@ else:
                                 y0, y1 = zy + (4-r) * g_side, zy + (5-r) * g_side
                                 fig_heat.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1))
                                 fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=f"{val_h:.3f}" if "時間" in target_metric else f"{val_h:.1f}", showarrow=False, font=dict(size=14, color=f_c, weight="bold"))
+                    fig_heat.add_shape(type="rect", x0=zx+g_side, x1=zx+4*g_side, y0=zy+g_side, y1=zy+4*g_side, line=dict(color="red", width=4), layer="above")
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(visible=False, range=[-320, 320]), yaxis=dict(visible=False, range=[-40, 520]), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
+                    st.subheader(f"📈 {target_metric}：月別推移")
+                    pdf_for_graph = pdf.copy()
+                    pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
+                    pdf_for_graph['Month_Name'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.month.astype(str) + "月"
+                    pdf_for_graph['Month_Sort'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.strftime('%Y-%m')
+                    graph_df = pdf_for_graph[pdf_for_graph['スイング条件_str'].isin(sel_conds)].dropna(subset=[target_metric])
+                    if not graph_df.empty:
+                        monthly_stats = graph_df.groupby(['Month_Sort', 'Month_Name'])[target_metric].agg(['mean', 'max', 'min']).reset_index().sort_values('Month_Sort')
+                        fig_trend = go.Figure()
+                        is_t = "時間" in target_metric
+                        fig_trend.add_trace(go.Scatter(x=monthly_stats['Month_Name'], y=monthly_stats['min'] if is_t else monthly_stats['max'], name="月間最良", line=dict(color='#FF4B4B', width=4), mode='lines+markers'))
+                        fig_trend.add_trace(go.Scatter(x=monthly_stats['Month_Name'], y=monthly_stats['mean'], name="月間平均", line=dict(color='#0068C9', width=3, dash='dot'), mode='lines+markers'))
+                        fig_trend.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), yaxis=dict(rangemode="tozero"), xaxis=dict(type='category'))
+                        st.plotly_chart(fig_trend, use_container_width=True)
+
     with tab2:
-        st.title("⚔️ 選手間比較分析")
+        st.title("⚔️ 比較分析")
         if not db_df.empty:
             all_cols = db_df.columns.tolist()
             try: v_idx = db_df.columns.get_loc("オンプレーンスコア"); all_metrics = all_cols[v_idx:]
@@ -239,19 +282,19 @@ else:
             with c1: comp_metric = st.selectbox("比較指標", valid_comp_metrics, key="m_tab2")
             with c2:
                 all_conds_c = sorted([str(x) for x in db_df['スイング条件'].fillna("未設定").astype(str).str.strip().unique().tolist()])
-                sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
+                sel_conds_c = st.multiselect("条件で絞る", all_conds_c, default=all_conds_c, key="cond_tab2")
             
             fdf = db_df[db_df['スイング条件'].fillna("未設定").astype(str).str.strip().isin(sel_conds_c)].copy()
             if not fdf.empty:
                 fdf[comp_metric] = pd.to_numeric(fdf[comp_metric], errors='coerce')
                 ca, cb = st.columns(2)
-                with ca: player_a = st.selectbox("選手Aを選択", PLAYERS, key="compare_a")
-                with cb: player_b = st.selectbox("選手Bを選択", PLAYERS, key="compare_b")
+                with ca: player_a = st.selectbox("選手A", PLAYERS, key="compare_a")
+                with cb: player_b = st.selectbox("選手B", PLAYERS, key="compare_b")
                 if player_a and player_b:
                     p_cols = st.columns(2)
                     for idx, p_name in enumerate([player_a, player_b]):
                         with p_cols[idx]:
-                            st.write(f"**{p_name} の傾向**")
+                            st.write(f"**{p_name}**")
                             grid, eff_grid = get_3x3_grid(fdf[fdf['Player Name'] == p_name], comp_metric)
                             fig_pair = go.Figure()
                             for r_idx in range(3):
@@ -267,9 +310,9 @@ else:
     with tab3:
         st.title("📝 データ登録")
         c1, c2 = st.columns(2)
-        with c1: reg_player = st.selectbox("登録する選手を選択", PLAYERS, key="reg_p_tab3")
-        with c2: reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_tab3")
-        uploaded_file = st.file_uploader("Excelファイルをアップロード (.xlsx)", type=["xlsx"])
+        with c1: reg_player = st.selectbox("選手", PLAYERS, key="reg_p_tab3")
+        with c2: reg_date = st.date_input("日付", value=datetime.date.today(), key="reg_d_tab3")
+        uploaded_file = st.file_uploader("Excelアップロード", type=["xlsx"])
         if uploaded_file is not None:
             try:
                 input_df = pd.read_excel(uploaded_file)
@@ -280,7 +323,8 @@ else:
                         input_df['DateTime'] = reg_date.strftime('%Y-%m-%d') + ' ' + input_df['time_col'].astype(str).str.strip()
                         input_df['Player Name'] = reg_player
                         latest_db = load_data_from_github()
-                        success, message = save_to_github(pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df)
+                        updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
+                        success, message = save_to_github(updated_db)
                         if success: st.success("✅ 保存しました！"); st.balloons()
                         else: st.error(f"❌ 保存失敗: {message}")
             except Exception as e: st.error(f"❌ エラー: {e}")
