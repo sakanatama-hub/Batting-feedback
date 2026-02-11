@@ -47,7 +47,7 @@ def save_to_github(new_df):
     put_res = requests.put(url, headers=headers, json=data)
     return (True, "成功") if put_res.status_code in [200, 201] else (False, f"エラー {put_res.status_code}")
 
-# --- 共通ユーティリティ (すべての色付け定義を反映) ---
+# --- 共通ユーティリティ (加速の大きさの色定義を修正版) ---
 def get_color(val, metric_name, row_idx=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
@@ -55,23 +55,23 @@ def get_color(val, metric_name, row_idx=None):
     # 体の回転によるバットの加速の大きさ (初動) (G)
     if "バットの加速の大きさ" in metric_name:
         if val >= 4.5:
-            color = "rgba(255, 0, 0, 0.9)" # 赤
+            color = "rgba(255, 0, 0, 0.9)"
             f_color = "white"
         elif 4.0 <= val < 4.5:
-            color = "rgba(255, 180, 180, 0.9)" # 薄い赤
+            color = "rgba(255, 180, 180, 0.9)"
             f_color = "black"
         elif 3.5 <= val < 4.0:
-            color = "rgba(255, 255, 255, 0.9)" # 白
+            color = "rgba(255, 255, 255, 0.9)"
             f_color = "black"
         elif 2.5 <= val < 3.5:
-            color = "rgba(180, 180, 255, 0.9)" # 薄い青
+            color = "rgba(180, 180, 255, 0.9)"
             f_color = "black"
         else:
-            color = "rgba(0, 0, 255, 0.9)" # 青
+            color = "rgba(0, 0, 255, 0.9)"
             f_color = "white"
         return color, f_color
 
-    # 体とバットの角度 (インパクト) (°)
+    # 体とバットの角度 (インパクト)
     if "体とバットの角度" in metric_name:
         if 85 <= val <= 95:
             intensity = 1.0 - (abs(val - 90) / 5.0)
@@ -90,7 +90,7 @@ def get_color(val, metric_name, row_idx=None):
             f_color = "white" if intensity > 0.5 else "black"
         return color, f_color
 
-    # アッパースイング度判定 (既存維持)
+    # アッパースイング度判定
     if "アッパースイング度" in metric_name and row_idx is not None:
         if row_idx == 0: base, low, high = 6.5, 3.0, 10.0
         elif row_idx == 1: base, low, high = 11.5, 8.0, 15.0
@@ -287,7 +287,7 @@ else:
                     top3_scores = [f"{s*100:.1f}%" for s in top3_series.values]
                 else:
                     top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
-                    top3_scores = [f"{s:.3f if is_time else s:.1f}" for s in top3_series.values]
+                    top3_scores = [f"{s:.3f}" if is_time else f"{s:.1f}" for s in top3_series.values]
                 
                 st.subheader(f"🥇 {'成功率' if is_upper else '平均'} トップ3")
                 t_cols = st.columns(3)
