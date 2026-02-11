@@ -47,11 +47,35 @@ def save_to_github(new_df):
     put_res = requests.put(url, headers=headers, json=data)
     return (True, "成功") if put_res.status_code in [200, 201] else (False, f"エラー {put_res.status_code}")
 
-# --- 共通ユーティリティ (スイング時間の赤色範囲を拡大) ---
+# --- 共通ユーティリティ (角度の色定義を新規追加) ---
 def get_color(val, metric_name, row_idx=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
     
+    # --- 体とバットの角度 (インパクト) (新規修正) ---
+    if "体とバットの角度" in metric_name:
+        if 85 <= val <= 95:
+            # 90に近づくほど赤を濃くする (85 or 95 で白っぽく、90で真っ赤)
+            intensity = 1.0 - (abs(val - 90) / 5.0)
+            gb_val = int(255 * (1 - intensity))
+            color = f"rgba(255, {gb_val}, {gb_val}, 0.9)"
+            f_color = "white" if intensity > 0.5 else "black"
+        elif val < 85:
+            # 85から75にかけて緑へのグラデーション
+            intensity = min(max((85 - val) / 10.0, 0.0), 1.0)
+            # 85に近いほど白(255,255,255)、75に近いほど緑(0,255,0)
+            rb_val = int(255 * (1 - intensity))
+            color = f"rgba({rb_val}, 255, {rb_val}, 0.9)"
+            f_color = "black"
+        else: # val > 95
+            # 95から105にかけて青へのグラデーション
+            intensity = min(max((val - 95) / 10.0, 0.0), 1.0)
+            # 95に近いほど白(255,255,255)、105に近いほど青(0,0,255)
+            rg_val = int(255 * (1 - intensity))
+            color = f"rgba({rg_val}, {rg_val}, 255, 0.9)"
+            f_color = "white" if intensity > 0.5 else "black"
+        return color, f_color
+
     # --- アッパースイング度判定 (既存維持) ---
     if "アッパースイング度" in metric_name and row_idx is not None:
         if row_idx == 0: base, low, high = 6.5, 3.0, 10.0
@@ -92,26 +116,21 @@ def get_color(val, metric_name, row_idx=None):
             f_color = "white"
         return color, f_color
 
-    # --- スイング時間の判定 (再修正ロジック) ---
+    # --- スイング時間の判定 (直前の修正を維持) ---
     if "スイング時間" in metric_name:
         if val < 0.14:
-            # 0.13台以下: 赤
             color = "rgba(255, 0, 0, 0.9)"
             f_color = "white"
         elif 0.14 <= val < 0.15:
-            # 0.14台: 薄い赤
             color = "rgba(255, 180, 180, 0.9)"
             f_color = "black"
         elif 0.15 <= val < 0.16:
-            # 0.15台: 白
             color = "rgba(255, 255, 255, 0.9)"
             f_color = "black"
         elif 0.16 <= val < 0.17:
-            # 0.16台: 薄い青
             color = "rgba(180, 180, 255, 0.9)"
             f_color = "black"
         else:
-            # 0.17以上: 青
             color = "rgba(0, 0, 255, 0.9)"
             f_color = "white"
         return color, f_color
@@ -124,6 +143,7 @@ def get_color(val, metric_name, row_idx=None):
     f_color = "black" if intensity < 0.4 else "white"
     return color, f_color
 
+# 以下、get_3x3_grid および Streamlit UIコードは変更なしのため省略 (必要であれば補完しますが、構造は維持されています)
 def get_3x3_grid(df, metric):
     grid = np.zeros((3, 3))
     counts = np.zeros((3, 3))
@@ -140,7 +160,6 @@ def get_3x3_grid(df, metric):
         counts[r, c] += 1
     return np.where(counts > 0, grid / counts, 0)
 
-# --- UI設定 ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
 if "ok" not in st.session_state:
     st.session_state["ok"] = False
