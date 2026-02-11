@@ -52,12 +52,10 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # --- 指定された項目を白固定にする ---
     white_metrics = ["バット角度", "バットの角度", "打球方向", "飛距離"]
     if any(m in metric_name for m in white_metrics):
         return "#FFFFFF", "black"
 
-    # --- 打球角度の判定 ---
     if "打球角度" in metric_name:
         center = 15.0
         if 8.0 <= val <= 22.0:
@@ -76,7 +74,6 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
             rg_val = int(255 * (1 - intensity))
             return f"rgba({rg_val}, {rg_val}, 255, 0.9)", "white" if intensity > 0.5 else "black"
 
-    # --- 打球速度の判定 ---
     if "打球速度" in metric_name:
         if val < 140: return "rgba(0, 0, 255, 0.9)", "white"
         elif 140 <= val < 145: return "rgba(173, 216, 230, 0.9)", "black"
@@ -84,7 +81,6 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
         elif 153 <= val <= 160: return "rgba(255, 182, 193, 0.9)", "black"
         else: return "rgba(255, 0, 0, 0.9)", "white"
 
-    # --- 手の最大スピード (効率ベース) ---
     if "手の最大スピード" in metric_name:
         eff = eff_val if eff_val is not None else val
         if eff < 2.7: return "rgba(0, 128, 0, 0.9)", "white"
@@ -97,7 +93,6 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
         elif eff <= 3.4: return "rgba(173, 216, 230, 0.9)", "black"
         else: return "rgba(0, 0, 255, 0.9)", "white"
 
-    # --- パワー ---
     if "パワー" in metric_name:
         if val < 3: return "rgba(0, 0, 255, 0.9)", "white"
         elif val <= 3.5: return "rgba(173, 216, 230, 0.9)", "black"
@@ -105,7 +100,6 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
         elif val <= 4.5: return "rgba(255, 182, 193, 0.9)", "black"
         else: return "rgba(255, 0, 0, 0.9)", "white"
 
-    # --- 体の回転によるバットの加速の大きさ ---
     if "体の回転によるバットの加速の大きさ" in metric_name:
         if val <= 5: return "rgba(0, 0, 255, 0.9)", "white"
         elif val <= 10: return "rgba(173, 216, 230, 0.9)", "black"
@@ -113,7 +107,6 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
         elif val <= 20: return "rgba(255, 182, 193, 0.9)", "black"
         else: return "rgba(255, 0, 0, 0.9)", "white"
 
-    # --- アッパースイング度判定 ---
     if "アッパースイング度" in metric_name and row_idx is not None:
         if row_idx == 0: base, low, high = 6.5, 3.0, 10.0
         elif row_idx == 1: base, low, high = 11.5, 8.0, 15.0
@@ -128,7 +121,6 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
             intensity = min((val - high) / 15.0, 1.0)
             return f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)", "black"
 
-    # --- バットスピード ---
     if "バットスピード" in metric_name:
         if val < 100: return "rgba(0, 0, 255, 0.9)", "white"
         elif 100 <= val <= 110: return "rgba(255, 255, 255, 0.9)", "black"
@@ -138,7 +130,6 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
             return f"rgba(255, {gb_val}, {gb_val}, 0.9)", "black" if intensity < 0.6 else "white"
         else: return "rgba(255, 0, 0, 0.9)", "white"
 
-    # --- スイング時間 ---
     if "スイング時間" in metric_name:
         if val < 0.14: return "rgba(255, 0, 0, 0.9)", "white"
         elif 0.14 <= val < 0.15: return "rgba(255, 180, 180, 0.9)", "black"
@@ -146,7 +137,6 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
         elif 0.16 <= val < 0.17: return "rgba(180, 180, 255, 0.9)", "black"
         else: return "rgba(0, 0, 255, 0.9)", "white"
 
-    # --- その他デフォルト ---
     base, sensitivity = 105, 30
     diff = val - base
     intensity = min(abs(diff) / sensitivity, 1.0)
@@ -171,15 +161,20 @@ def get_3x3_grid(df, metric):
         if is_hand: eff_grid[r, c] += row['eff_calc']
     return np.where(counts > 0, grid / counts, 0), (np.where(counts > 0, eff_grid / counts, 0) if is_hand else None)
 
+# --- アプリケーション本体 ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
-if "ok" not in st.session_state: st.session_state["ok"] = False
+if "ok" not in st.session_state: 
+    st.session_state["ok"] = False
+
 if not st.session_state["ok"]:
     st.title("⚾️ TOYOTA BASEBALL CLUB")
     val = st.text_input("PASSWORD", type="password")
     if st.button("LOGIN"):
-        if val == PW: st.session_state["ok"] = True; st.rerun()
+        if val == PW: 
+            st.session_state["ok"] = True
+            st.rerun()
 else:
-     db_df = load_data_from_github()
+    db_df = load_data_from_github()
     tab1, tab2, tab3 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録"])
 
     with tab1:
@@ -188,7 +183,8 @@ else:
             db_df['スイング条件_str'] = db_df['スイング条件'].fillna("未設定").astype(str).str.strip()
             all_possible_conds = sorted(db_df['スイング条件_str'].unique().tolist())
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
-            with c1: target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
+            with c1: 
+                target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
             
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
@@ -223,7 +219,6 @@ else:
                 if vdf.empty:
                     st.warning(f"⚠️ 一致するデータがありません。")
                 else:
-                    # 効率計算 (手の最大スピード選択時)
                     if "手の最大スピード" in target_metric and "バットスピード (km/h)" in vdf.columns:
                         vdf[target_metric] = pd.to_numeric(vdf['バットスピード (km/h)'], errors='coerce') / pd.to_numeric(vdf[target_metric], errors='coerce')
                     else:
@@ -242,7 +237,6 @@ else:
                         with col_m3:
                             st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
-                    # ヒートマップ
                     st.subheader(f"📊 {target_metric}：ゾーン別平均")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
@@ -276,7 +270,6 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # インパクトポイント
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -293,7 +286,6 @@ else:
                     fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True)
 
-                    # 月別推移
                     st.subheader(f"📈 {target_metric}：月別推移")
                     pdf_for_graph = pdf.copy()
                     if "手の最大スピード" in target_metric and "バットスピード (km/h)" in pdf_for_graph.columns:
@@ -367,7 +359,7 @@ else:
                         name, score_str, rank = top3_names[idx], top3_scores[idx], idx + 1
                         with t_cols[i]:
                             st.markdown(f"<div style='text-align: center; background-color: #333; padding: 5px; border-radius: 5px;'><span style='font-size: 1.1rem; font-weight: bold; color: white;'>{rank}位: {name}</span><br><span style='font-size: 0.9rem; color: #ddd;'>{score_str}</span></div>", unsafe_allow_html=True)
-                            grid = get_3x3_grid(fdf[fdf['Player Name'] == name], comp_metric)
+                            grid, _ = get_3x3_grid(fdf[fdf['Player Name'] == name], comp_metric)
                             fig = go.Figure()
                             for r_idx in range(3):
                                 for c_idx in range(3):
@@ -384,7 +376,8 @@ else:
                 with cb: player_b = st.selectbox("選手Bを選択", PLAYERS, key="compare_b")
                 if player_a and player_b:
                     limit = 0.05 if "手の最大スピード" in comp_metric else (0.010 if is_time else 5.0)
-                    g_a, g_b = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric), get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
+                    g_a, _ = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric)
+                    g_b, _ = get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
                     p_cols = st.columns(2)
                     for idx, (name, mine, yours) in enumerate([(player_a, g_a, g_b), (player_b, g_b, g_a)]):
                         with p_cols[idx]:
