@@ -47,12 +47,31 @@ def save_to_github(new_df):
     put_res = requests.put(url, headers=headers, json=data)
     return (True, "成功") if put_res.status_code in [200, 201] else (False, f"エラー {put_res.status_code}")
 
-# --- 共通ユーティリティ (修正：色定義) ---
+# --- 共通ユーティリティ (色定義) ---
 def get_color(val, metric_name, row_idx=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # --- パワー (新規追加修正) ---
+    # --- 手の最大スピード (効率ベースの新規定義) ---
+    if "手の最大スピード" in metric_name:
+        eff = val
+        if eff < 2.7:
+            color, f_color = "rgba(0, 128, 0, 0.9)", "white"          # 緑
+        elif eff < 3.0:
+            color, f_color = "rgba(144, 238, 144, 0.9)", "black"      # 薄い緑
+        elif 3.0 <= eff <= 3.2:
+            # 3.1で真っ赤になるグラデーション
+            dist = abs(eff - 3.1)
+            intensity = 1.0 - (dist / 0.1) if dist <= 0.1 else 0.0
+            gb_val = int(255 * (1 - intensity))
+            color, f_color = f"rgba(255, {gb_val}, {gb_val}, 0.9)", "white" if intensity > 0.5 else "black"
+        elif eff <= 3.4:
+            color, f_color = "rgba(173, 216, 230, 0.9)", "black"      # 薄い青
+        else: # 3.5以上
+            color, f_color = "rgba(0, 0, 255, 0.9)", "white"          # 青
+        return color, f_color
+
+    # --- パワー ---
     if "パワー" in metric_name:
         if val < 3:
             color, f_color = "rgba(0, 0, 255, 0.9)", "white"          # 青
@@ -69,15 +88,15 @@ def get_color(val, metric_name, row_idx=None):
     # --- 体の回転によるバットの加速の大きさ（初動）(G) ---
     if "体の回転によるバットの加速の大きさ" in metric_name:
         if val <= 5:
-            color, f_color = "rgba(0, 0, 255, 0.9)", "white"          # 青
+            color, f_color = "rgba(0, 0, 255, 0.9)", "white"
         elif val <= 10:
-            color, f_color = "rgba(173, 216, 230, 0.9)", "black"      # 薄い青
+            color, f_color = "rgba(173, 216, 230, 0.9)", "black"
         elif val <= 14:
-            color, f_color = "rgba(255, 255, 255, 0.9)", "black"      # 白
+            color, f_color = "rgba(255, 255, 255, 0.9)", "black"
         elif val <= 20:
-            color, f_color = "rgba(255, 182, 193, 0.9)", "black"      # 薄い赤
+            color, f_color = "rgba(255, 182, 193, 0.9)", "black"
         else:
-            color, f_color = "rgba(255, 0, 0, 0.9)", "white"          # 赤
+            color, f_color = "rgba(255, 0, 0, 0.9)", "white"
         return color, f_color
 
     # --- 体とバットの角度 (インパクト) ---
@@ -166,7 +185,6 @@ def get_color(val, metric_name, row_idx=None):
     f_color = "black" if intensity < 0.4 else "white"
     return color, f_color
 
-# --- 以降、変更なし ---
 def get_3x3_grid(df, metric):
     grid = np.zeros((3, 3))
     counts = np.zeros((3, 3))
@@ -174,7 +192,15 @@ def get_3x3_grid(df, metric):
     df_c = df.copy()
     df_c['StrikeZoneX'] = pd.to_numeric(df_c['StrikeZoneX'], errors='coerce')
     df_c['StrikeZoneY'] = pd.to_numeric(df_c['StrikeZoneY'], errors='coerce')
-    df_c[metric] = pd.to_numeric(df_c[metric], errors='coerce')
+    
+    # 手の最大スピードの場合のみ、効率を計算して値を書き換える
+    if "手の最大スピード" in metric and "バットスピード (km/h)" in df_c.columns:
+        b_speed = pd.to_numeric(df_c['バットスピード (km/h)'], errors='coerce')
+        h_speed = pd.to_numeric(df_c[metric], errors='coerce')
+        df_c[metric] = b_speed / h_speed
+    else:
+        df_c[metric] = pd.to_numeric(df_c[metric], errors='coerce')
+
     valid = df_c.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
     for _, row in valid.iterrows():
         c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
@@ -224,12 +250,7 @@ else:
                         candidates = all_cols[v_idx:]
                     except:
                         candidates = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
-                    
-                    valid_metrics = []
-                    for c in candidates:
-                        check_vals = pd.to_numeric(pdf[c], errors='coerce')
-                        if not check_vals.dropna().empty and any(ord(char) > 255 for char in c):
-                            valid_metrics.append(c)
+                    valid_metrics = [c for c in candidates if not pd.to_numeric(pdf[c], errors='coerce').dropna().empty and any(ord(char) > 255 for char in c)]
 
                     priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
                     sorted_metrics = [m for m in priority if m in valid_metrics] + [m for m in valid_metrics if m not in priority]
@@ -244,18 +265,22 @@ else:
                 if vdf.empty:
                     st.warning(f"⚠️ 一致するデータがありません。")
                 else:
-                    vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
-                    valid_vals = vdf[target_metric].dropna()
+                    # 効率計算 (手の最大スピード選択時)
+                    if "手の最大スピード" in target_metric and "バットスピード (km/h)" in vdf.columns:
+                        vdf[target_metric] = pd.to_numeric(vdf['バットスピード (km/h)'], errors='coerce') / pd.to_numeric(vdf[target_metric], errors='coerce')
+                    else:
+                        vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
                     
+                    valid_vals = vdf[target_metric].dropna()
                     if not valid_vals.empty:
                         m_max = valid_vals.min() if "時間" in target_metric else valid_vals.max()
                         m_avg = valid_vals.mean()
                         col_m1, col_m2, col_m3 = st.columns([2, 2, 4])
                         with col_m1:
                             label = "MIN" if "時間" in target_metric else "MAX"
-                            st.metric(label=f"期間内 {label}", value=f"{m_max:.3f}" if "時間" in target_metric else f"{m_max:.1f}")
+                            st.metric(label=f"期間内 {label}", value=f"{m_max:.3f}" if "時間" in target_metric or "手の最大スピード" in target_metric else f"{m_max:.1f}")
                         with col_m2:
-                            st.metric(label="期間内 平均", value=f"{m_avg:.3f}" if "時間" in target_metric else f"{m_avg:.1f}")
+                            st.metric(label="期間内 平均", value=f"{m_avg:.3f}" if "時間" in target_metric or "手の最大スピード" in target_metric else f"{m_avg:.1f}")
                         with col_m3:
                             st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
@@ -271,25 +296,23 @@ else:
                     fig_heat.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
                     grid_side = 55; z_x_start, z_y_start = -(grid_side * 2.5), 180
-                    def get_grid_pos(x, y):
-                        r = 0 if y > SZ_Y_MAX else 1 if y > SZ_Y_TH2 else 2 if y > SZ_Y_TH1 else 3 if y > SZ_Y_MIN else 4
-                        c = 0 if x < SZ_X_MIN else 1 if x < SZ_X_TH1 else 2 if x <= SZ_X_TH2 else 3 if x <= SZ_X_MAX else 4
-                        return r, c
+                    
                     grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
-                        r, c = get_grid_pos(row['StrikeZoneX'], row['StrikeZoneY'])
+                        r = 0 if row['StrikeZoneY'] > SZ_Y_MAX else 1 if row['StrikeZoneY'] > SZ_Y_TH2 else 2 if row['StrikeZoneY'] > SZ_Y_TH1 else 3 if row['StrikeZoneY'] > SZ_Y_MIN else 4
+                        c = 0 if row['StrikeZoneX'] < SZ_X_MIN else 1 if row['StrikeZoneX'] < SZ_X_TH1 else 2 if row['StrikeZoneX'] <= SZ_X_TH2 else 3 if row['StrikeZoneX'] <= SZ_X_MAX else 4
                         grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
                     display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
+                    
                     for r in range(5):
                         for c in range(5):
                             x0, x1 = z_x_start + c * grid_side, z_x_start + (c + 1) * grid_side
                             y0, y1 = z_y_start + (4 - r) * grid_side, z_y_start + (5 - r) * grid_side
-                            val = display_grid[r, c]
-                            mapped_r = max(0, min(2, r - 1))
-                            color, f_color = get_color(val, target_metric, row_idx=mapped_r)
+                            val_h = display_grid[r, c]
+                            color, f_color = get_color(val_h, target_metric, row_idx=max(0, min(2, r - 1)))
                             fig_heat.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#222", width=1))
-                            if val > 0:
-                                txt = f"{val:.3f}" if "時間" in target_metric else f"{val:.1f}"
+                            if val_h > 0:
+                                txt = f"{val_h:.2f}" if "手の最大スピード" in target_metric else (f"{val_h:.3f}" if "時間" in target_metric else f"{val_h:.1f}")
                                 fig_heat.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2, text=txt, showarrow=False, font=dict(size=14, color=f_color, weight="bold"))
                     fig_heat.add_shape(type="rect", x0=z_x_start+grid_side, x1=z_x_start+4*grid_side, y0=z_y_start+grid_side, y1=z_y_start+4*grid_side, line=dict(color="red", width=4), layer="above")
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
@@ -315,12 +338,13 @@ else:
                     # 月別推移
                     st.subheader(f"📈 {target_metric}：月別推移")
                     pdf_for_graph = pdf.copy()
-                    pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
+                    if "手の最大スピード" in target_metric and "バットスピード (km/h)" in pdf_for_graph.columns:
+                        pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph['バットスピード (km/h)'], errors='coerce') / pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
+                    else:
+                        pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
                     pdf_for_graph['Month_Name'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.month.astype(str) + "月"
                     pdf_for_graph['Month_Sort'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.strftime('%Y-%m')
-                    
                     graph_df = pdf_for_graph[pdf_for_graph['スイング条件_str'].isin(sel_conds)].dropna(subset=[target_metric])
-                    
                     if not graph_df.empty:
                         monthly_stats = graph_df.groupby(['Month_Sort', 'Month_Name'])[target_metric].agg(['mean', 'max', 'min']).reset_index()
                         monthly_stats = monthly_stats.sort_values('Month_Sort')
@@ -330,11 +354,7 @@ else:
                         trend_best_val = monthly_stats['min'] if is_time else monthly_stats['max']
                         fig_trend.add_trace(go.Scatter(x=monthly_stats['Month_Name'], y=trend_best_val, name=trend_best_label, line=dict(color='#FF4B4B', width=4), mode='lines+markers'))
                         fig_trend.add_trace(go.Scatter(x=monthly_stats['Month_Name'], y=monthly_stats['mean'], name="月間平均", line=dict(color='#0068C9', width=3, dash='dot'), mode='lines+markers'))
-                        fig_trend.update_layout(
-                            height=350, margin=dict(l=20, r=20, t=20, b=20), hovermode="x unified", 
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                            yaxis=dict(rangemode="tozero"), xaxis=dict(type='category')
-                        )
+                        fig_trend.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), yaxis=dict(rangemode="tozero"), xaxis=dict(type='category'))
                         st.plotly_chart(fig_trend, use_container_width=True)
 
     with tab2:
@@ -357,7 +377,10 @@ else:
             fdf = db_df_c[db_df_c['スイング条件_str'].isin(sel_conds_c)].copy()
             
             if not fdf.empty and comp_metric:
-                fdf[comp_metric] = pd.to_numeric(fdf[comp_metric], errors='coerce')
+                if "手の最大スピード" in comp_metric:
+                    fdf[comp_metric] = pd.to_numeric(fdf['バットスピード (km/h)'], errors='coerce') / pd.to_numeric(fdf[comp_metric], errors='coerce')
+                else:
+                    fdf[comp_metric] = pd.to_numeric(fdf[comp_metric], errors='coerce')
                 fdf['StrikeZoneY'] = pd.to_numeric(fdf['StrikeZoneY'], errors='coerce')
                 is_time = "スイング時間" in comp_metric
                 is_upper = "アッパースイング度" in comp_metric
@@ -371,13 +394,12 @@ else:
                         if y > SZ_Y_TH2: return 3.0 <= val <= 10.0
                         elif y > SZ_Y_TH1: return 8.0 <= val <= 15.0
                         else: return 10.0 <= val <= 20.0
-                    
                     fdf['is_success'] = fdf.apply(check_success, axis=1)
                     top3_series = fdf.groupby('Player Name')['is_success'].mean().sort_values(ascending=False).head(3)
                     top3_scores = [f"{s*100:.1f}%" for s in top3_series.values]
                 else:
                     top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
-                    top3_scores = [f"{s:.3f}" if is_time else f"{s:.1f}" for s in top3_series.values]
+                    top3_scores = [f"{s:.2f}" if "手の最大スピード" in comp_metric else (f"{s:.3f}" if is_time else f"{s:.1f}") for s in top3_series.values]
 
                 top3_names = top3_series.index.tolist()
                 podium_order = [1, 0, 2] if len(top3_names) >= 3 else list(range(len(top3_names)))
@@ -393,7 +415,7 @@ else:
                                 for c_idx in range(3):
                                     v = grid[r_idx, c_idx]; color, f_color = get_color(v, comp_metric, row_idx=r_idx)
                                     fig.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=color, line=dict(color="#222", width=2))
-                                    if v > 0: fig.add_annotation(x=c_idx, y=2-r_idx, text=f"{v:.3f}" if is_time else f"{v:.1f}", showarrow=False, font=dict(color=f_color, weight="bold", size=14))
+                                    if v > 0: fig.add_annotation(x=c_idx, y=2-r_idx, text=f"{v:.2f}" if "手の最大スピード" in comp_metric else (f"{v:.3f}" if is_time else f"{v:.1f}"), showarrow=False, font=dict(color=f_color, weight="bold", size=14))
                             fig.update_layout(height=350, margin=dict(l=5, r=5, t=5, b=5), xaxis=dict(visible=False, range=[-0.6, 2.6]), yaxis=dict(visible=False, range=[-0.6, 2.6]), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
                             st.plotly_chart(fig, use_container_width=True, key=f"top3_{rank}", config={'displayModeBar': False})
 
@@ -403,7 +425,7 @@ else:
                 with ca: player_a = st.selectbox("選手Aを選択", PLAYERS, key="compare_a")
                 with cb: player_b = st.selectbox("選手Bを選択", PLAYERS, key="compare_b")
                 if player_a and player_b:
-                    limit = 0.010 if is_time else 5.0
+                    limit = 0.05 if "手の最大スピード" in comp_metric else (0.010 if is_time else 5.0)
                     g_a, g_b = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric), get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
                     p_cols = st.columns(2)
                     for idx, (name, mine, yours) in enumerate([(player_a, g_a, g_b), (player_b, g_b, g_a)]):
@@ -418,7 +440,7 @@ else:
                                     if is_time: font_c = "red" if (v < ov and v > 0 and ov > 0) else "blue" if (v > ov and v > 0 and ov > 0) else "black"
                                     else: font_c = "red" if (v > ov and v > 0 and ov > 0) else "blue" if (v < ov and v > 0 and ov > 0) else "black"
                                     fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor="white", line=dict(color=lc, width=lw))
-                                    if v > 0: fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=f"{v:.3f}" if is_time else f"{v:.1f}", showarrow=False, font=dict(color=font_c, weight="bold", size=16))
+                                    if v > 0: fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=f"{v:.2f}" if "手の最大スピード" in comp_metric else (f"{v:.3f}" if is_time else f"{v:.1f}"), showarrow=False, font=dict(color=font_c, weight="bold", size=16))
                             fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['左','中','右'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
                             st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
