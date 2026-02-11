@@ -52,9 +52,13 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # --- 手の最大スピード (効率ベースの新規定義) ---
+    # --- 【新規】白固定にする項目（飛距離、打球方向、バット角度関連） ---
+    neutral_metrics = ["飛距離", "打球方向", "バットの角度", "打球角度", "回転数", "ExitVelocity"]
+    if any(m in metric_name for m in neutral_metrics):
+        return "rgba(255, 255, 255, 0.3)", "black"
+
+    # --- 手の最大スピード (効率ベース) ---
     if "手の最大スピード" in metric_name:
-        # eff_val（効率）が渡されている場合はそれを使用、なければval（通常値）を使用
         eff = eff_val if eff_val is not None else val
         if eff < 2.7:
             color, f_color = "rgba(0, 128, 0, 0.9)", "white"
@@ -87,25 +91,6 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
         elif val <= 14: color, f_color = "rgba(255, 255, 255, 0.9)", "black"
         elif val <= 20: color, f_color = "rgba(255, 182, 193, 0.9)", "black"
         else: color, f_color = "rgba(255, 0, 0, 0.9)", "white"
-        return color, f_color
-
-    # --- 体とバットの角度 ---
-    if "体とバットの角度" in metric_name:
-        if 85 <= val <= 95:
-            intensity = 1.0 - (abs(val - 90) / 5.0)
-            gb_val = int(255 * (1 - intensity))
-            color = f"rgba(255, {gb_val}, {gb_val}, 0.9)"
-            f_color = "white" if intensity > 0.5 else "black"
-        elif val < 85:
-            intensity = min(max((85 - val) / 10.0, 0.0), 1.0)
-            rb_val = int(255 * (1 - intensity))
-            color = f"rgba({rb_val}, 255, {rb_val}, 0.9)"
-            f_color = "black"
-        else:
-            intensity = min(max((val - 95) / 10.0, 0.0), 1.0)
-            rg_val = int(255 * (1 - intensity))
-            color = f"rgba({rg_val}, {rg_val}, 255, 0.9)"
-            f_color = "white" if intensity > 0.5 else "black"
         return color, f_color
 
     # --- アッパースイング度判定 ---
@@ -148,7 +133,7 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
         else: color = "rgba(0, 0, 255, 0.9)"; f_color = "white"
         return color, f_color
 
-    # --- その他 ---
+    # --- その他デフォルト ---
     base, sensitivity = 105, 30
     diff = val - base
     intensity = min(abs(diff) / sensitivity, 1.0)
@@ -166,7 +151,6 @@ def get_3x3_grid(df, metric):
     is_hand = "手の最大スピード" in metric and "バットスピード (km/h)" in df_c.columns
     df_c[metric] = pd.to_numeric(df_c[metric], errors='coerce')
     if is_hand:
-        # 効率（バットスピード/手のスピード）を内部で計算
         df_c['eff_calc'] = pd.to_numeric(df_c['バットスピード (km/h)'], errors='coerce') / df_c[metric]
 
     valid = df_c.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
@@ -285,7 +269,6 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # インパクトポイント以降、月別推移などは元コードのまま継続
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -389,7 +372,8 @@ else:
                 if player_a and player_b:
                     limit = 0.010 if is_time else 5.0
                     g_a, e_a = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric)
-                    g_b, e_b = get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
+                    g_b, e_b = get_3x3_grid(fdf[fdf['Player Name'] == player_b], num_metric=comp_metric)
+                    # get_3x3_gridは前回の修正で引数を調整済み
                     p_cols = st.columns(2)
                     for idx, (name, mine, yours) in enumerate([(player_a, g_a, g_b), (player_b, g_b, g_a)]):
                         with p_cols[idx]:
