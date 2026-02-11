@@ -62,7 +62,7 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
         center = 15.0
         if 8.0 <= val <= 22.0:
             dist = abs(val - center)
-            intensity = 1.0 - (dist / 7.0) # 15度で1.0
+            intensity = 1.0 - (dist / 7.0) 
             gb_val = int(255 * (1 - intensity))
             return f"rgba(255, {gb_val}, {gb_val}, 0.9)", "white" if intensity > 0.5 else "black"
         elif val < 8.0:
@@ -87,16 +87,15 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
     # --- 手の最大スピード (効率ベース) ---
     if "手の最大スピード" in metric_name:
         eff = eff_val if eff_val is not None else val
-        if eff < 2.7: color, f_color = "rgba(0, 128, 0, 0.9)", "white"
-        elif eff < 3.0: color, f_color = "rgba(144, 238, 144, 0.9)", "black"
+        if eff < 2.7: return "rgba(0, 128, 0, 0.9)", "white"
+        elif eff < 3.0: return "rgba(144, 238, 144, 0.9)", "black"
         elif 3.0 <= eff <= 3.2:
             dist = abs(eff - 3.1)
             intensity = 1.0 - (dist / 0.1) if dist <= 0.1 else 0.0
             gb_val = int(255 * (1 - intensity))
-            color, f_color = f"rgba(255, {gb_val}, {gb_val}, 0.9)", "white" if intensity > 0.5 else "black"
-        elif eff <= 3.4: color, f_color = "rgba(173, 216, 230, 0.9)", "black"
-        else: color, f_color = "rgba(0, 0, 255, 0.9)", "white"
-        return color, f_color
+            return f"rgba(255, {gb_val}, {gb_val}, 0.9)", "white" if intensity > 0.5 else "black"
+        elif eff <= 3.4: return "rgba(173, 216, 230, 0.9)", "black"
+        else: return "rgba(0, 0, 255, 0.9)", "white"
 
     # --- パワー ---
     if "パワー" in metric_name:
@@ -120,8 +119,7 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
         elif row_idx == 1: base, low, high = 11.5, 8.0, 15.0
         else: base, low, high = 15.0, 10.0, 20.0
         if low <= val <= high:
-            sensitivity = (high - low) / 2
-            intensity = 1.0 - (abs(val - base) / sensitivity)
+            intensity = 1.0 - (abs(val - base) / ((high - low) / 2))
             return f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)", "black"
         elif val < low:
             intensity = min((low - val) / 15.0, 1.0)
@@ -164,21 +162,17 @@ def get_3x3_grid(df, metric):
     df_c['StrikeZoneY'] = pd.to_numeric(df_c['StrikeZoneY'], errors='coerce')
     is_hand = "手の最大スピード" in metric and "バットスピード (km/h)" in df_c.columns
     df_c[metric] = pd.to_numeric(df_c[metric], errors='coerce')
-    if is_hand:
-        df_c['eff_calc'] = pd.to_numeric(df_c['バットスピード (km/h)'], errors='coerce') / df_c[metric]
+    if is_hand: df_c['eff_calc'] = pd.to_numeric(df_c['バットスピード (km/h)'], errors='coerce') / df_c[metric]
     valid = df_c.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
     for _, row in valid.iterrows():
         c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
         r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
         grid[r, c] += row[metric]; counts[r, c] += 1
         if is_hand: eff_grid[r, c] += row['eff_calc']
-    final_grid = np.where(counts > 0, grid / counts, 0)
-    final_eff = np.where(counts > 0, eff_grid / counts, 0) if is_hand else None
-    return final_grid, final_eff
+    return np.where(counts > 0, grid / counts, 0), (np.where(counts > 0, eff_grid / counts, 0) if is_hand else None)
 
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
 if "ok" not in st.session_state: st.session_state["ok"] = False
-
 if not st.session_state["ok"]:
     st.title("⚾️ TOYOTA BASEBALL CLUB")
     val = st.text_input("PASSWORD", type="password")
@@ -220,8 +214,12 @@ else:
                     is_hand_m = "手の最大スピード" in target_metric and "バットスピード (km/h)" in vdf.columns
                     if is_hand_m: vdf['eff_calc'] = pd.to_numeric(vdf['バットスピード (km/h)'], errors='coerce') / vdf[target_metric]
                     
+                    m_max = vdf[target_metric].min() if "時間" in target_metric else vdf[target_metric].max()
                     m_avg = vdf[target_metric].mean()
-                    st.metric(label="期間内 平均", value=f"{m_avg:.3f}" if "時間" in target_metric else f"{m_avg:.1f}")
+                    col_m1, col_m2, col_m3 = st.columns([2, 2, 4])
+                    with col_m1: st.metric(label=f"期間内 {'MIN' if '時間' in target_metric else 'MAX'}", value=f"{m_max:.3f}" if "時間" in target_metric else f"{m_max:.1f}")
+                    with col_m2: st.metric(label="期間内 平均", value=f"{m_avg:.3f}" if "時間" in target_metric else f"{m_avg:.1f}")
+                    with col_m3: st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
                     st.subheader(f"📊 {target_metric}：ゾーン別平均")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
@@ -256,6 +254,22 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(visible=False, range=[-320, 320]), yaxis=dict(visible=False, range=[-40, 520]), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
+                    st.subheader(f"📍 {target_metric}：インパクトポイント")
+                    fig_point = go.Figure()
+                    fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
+                    fig_point.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
+                    bx = 75 if hand == "左" else -75
+                    fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=160, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
+                    for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
+                        r_pt = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
+                        eff_pt = (pd.to_numeric(row['バットスピード (km/h)'], errors='coerce') / row[target_metric]) if is_hand_m else None
+                        dot_color, _ = get_color(row[target_metric], target_metric, row_idx=r_pt, eff_val=eff_pt)
+                        fig_point.add_trace(go.Scatter(x=[row['StrikeZoneX']], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
+                    fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_point, use_container_width=True)
+
                     st.subheader(f"📈 {target_metric}：月別推移")
                     pdf_for_graph = pdf.copy()
                     pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
@@ -282,29 +296,69 @@ else:
             with c1: comp_metric = st.selectbox("比較指標", valid_comp_metrics, key="m_tab2")
             with c2:
                 all_conds_c = sorted([str(x) for x in db_df['スイング条件'].fillna("未設定").astype(str).str.strip().unique().tolist()])
-                sel_conds_c = st.multiselect("条件で絞る", all_conds_c, default=all_conds_c, key="cond_tab2")
+                sel_conds_c = st.multiselect("条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
             
             fdf = db_df[db_df['スイング条件'].fillna("未設定").astype(str).str.strip().isin(sel_conds_c)].copy()
             if not fdf.empty:
                 fdf[comp_metric] = pd.to_numeric(fdf[comp_metric], errors='coerce')
-                ca, cb = st.columns(2)
-                with ca: player_a = st.selectbox("選手A", PLAYERS, key="compare_a")
-                with cb: player_b = st.selectbox("選手B", PLAYERS, key="compare_b")
-                if player_a and player_b:
-                    p_cols = st.columns(2)
-                    for idx, p_name in enumerate([player_a, player_b]):
-                        with p_cols[idx]:
-                            st.write(f"**{p_name}**")
-                            grid, eff_grid = get_3x3_grid(fdf[fdf['Player Name'] == p_name], comp_metric)
-                            fig_pair = go.Figure()
+                fdf['StrikeZoneY'] = pd.to_numeric(fdf['StrikeZoneY'], errors='coerce')
+                
+                st.subheader("🥇 指標別 トップ3")
+                is_upper = "アッパースイング度" in comp_metric
+                if is_upper:
+                    def check_success(row):
+                        val, y = row[comp_metric], row['StrikeZoneY']
+                        if pd.isna(val) or pd.isna(y): return None
+                        if y > SZ_Y_TH2: return 3.0 <= val <= 10.0
+                        elif y > SZ_Y_TH1: return 8.0 <= val <= 15.0
+                        else: return 10.0 <= val <= 20.0
+                    fdf['is_success'] = fdf.apply(check_success, axis=1)
+                    top3_series = fdf.groupby('Player Name')['is_success'].mean().sort_values(ascending=False).head(3)
+                else:
+                    top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending="時間" in comp_metric).head(3)
+                
+                t_cols = st.columns(3)
+                podium = [1, 0, 2] if len(top3_series) >= 3 else list(range(len(top3_series)))
+                for i, idx in enumerate(podium):
+                    if idx < len(top3_series):
+                        name = top3_series.index[idx]
+                        score = top3_series.values[idx]
+                        with t_cols[i]:
+                            st.markdown(f"<div style='text-align: center; background-color: #333; padding: 5px; border-radius: 5px;'><span style='font-size: 1.1rem; font-weight: bold; color: white;'>{idx+1}位: {name}</span><br><span style='font-size: 0.9rem; color: #ddd;'>{score*100:.1f}%" if is_upper else f"{score:.3f}" if "時間" in comp_metric else f"{score:.1f}</span></div>", unsafe_allow_html=True)
+                            grid, eff_grid = get_3x3_grid(fdf[fdf['Player Name'] == name], comp_metric)
+                            fig = go.Figure()
                             for r_idx in range(3):
                                 for c_idx in range(3):
                                     v = grid[r_idx, c_idx]
                                     e = eff_grid[r_idx, c_idx] if eff_grid is not None else None
                                     color, f_c = get_color(v, comp_metric, row_idx=r_idx, eff_val=e)
-                                    fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=color, line=dict(color="gray", width=1))
+                                    fig.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=color, line=dict(color="#222", width=2))
+                                    if v > 0: fig.add_annotation(x=c_idx, y=2-r_idx, text=f"{v:.3f}" if "時間" in comp_metric else f"{v:.1f}", showarrow=False, font=dict(color=f_c, weight="bold", size=14))
+                            fig.update_layout(height=350, margin=dict(l=5, r=5, t=5, b=5), xaxis=dict(visible=False, range=[-0.6, 2.6]), yaxis=dict(visible=False, range=[-0.6, 2.6]), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
+                            st.plotly_chart(fig, use_container_width=True, key=f"top3_{idx}")
+
+                st.markdown("---")
+                ca, cb = st.columns(2)
+                with ca: player_a = st.selectbox("選手A", PLAYERS, key="compare_a")
+                with cb: player_b = st.selectbox("選手B", PLAYERS, key="compare_b")
+                if player_a and player_b:
+                    limit = 0.010 if "時間" in comp_metric else 5.0
+                    g_a, e_a = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric)
+                    g_b, e_b = get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
+                    p_cols = st.columns(2)
+                    for idx, (name, mine, yours) in enumerate([(player_a, g_a, g_b), (player_b, g_b, g_a)]):
+                        with p_cols[idx]:
+                            st.write(f"**{name} の傾向**")
+                            fig_pair = go.Figure()
+                            for r_idx in range(3):
+                                for c_idx in range(3):
+                                    v, ov = mine[r_idx, c_idx], yours[r_idx, c_idx]
+                                    diff = abs(v - ov) if (v > 0 and ov > 0) else 0
+                                    lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
+                                    color, f_c = get_color(v, comp_metric, row_idx=r_idx)
+                                    fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=color, line=dict(color=lc, width=lw))
                                     if v > 0: fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=f"{v:.3f}" if "時間" in comp_metric else f"{v:.1f}", showarrow=False, font=dict(color=f_c, weight="bold", size=16))
-                            fig_pair.update_layout(height=400, xaxis=dict(tickvals=[0,1,2], ticktext=['左','中','右'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
+                            fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['左','中','右'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
                             st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
     with tab3:
