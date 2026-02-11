@@ -52,10 +52,10 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # --- 白固定にする項目（飛距離、打球方向、バット角度関連） ---
-    neutral_metrics = ["飛距離", "打球方向", "バットの角度", "打球角度", "回転数", "ExitVelocity"]
-    if any(m in metric_name for m in neutral_metrics):
-        return "rgba(255, 255, 255, 0.3)", "black"
+    # --- 指定された3項目を白固定にする ---
+    white_metrics = ["バットの角度", "打球方向", "飛距離"]
+    if any(m in metric_name for m in white_metrics):
+        return "#FFFFFF", "black"
 
     # --- 手の最大スピード (効率ベース) ---
     if "手の最大スピード" in metric_name:
@@ -71,7 +71,7 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
             color, f_color = f"rgba(255, {gb_val}, {gb_val}, 0.9)", "white" if intensity > 0.5 else "black"
         elif eff <= 3.4:
             color, f_color = "rgba(173, 216, 230, 0.9)", "black"
-        else: # 3.5以上
+        else: 
             color, f_color = "rgba(0, 0, 255, 0.9)", "white"
         return color, f_color
 
@@ -372,9 +372,7 @@ else:
                 if player_a and player_b:
                     limit = 0.010 if is_time else 5.0
                     g_a, e_a = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric)
-                    # --- ここが修正箇所 ---
                     g_b, e_b = get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
-                    # ----------------------
                     p_cols = st.columns(2)
                     for idx, (name, mine, yours) in enumerate([(player_a, g_a, g_b), (player_b, g_b, g_a)]):
                         with p_cols[idx]:
@@ -385,9 +383,17 @@ else:
                                     v, ov = mine[r_idx, c_idx], yours[r_idx, c_idx]
                                     diff = abs(v - ov) if (v > 0 and ov > 0) else 0
                                     lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
-                                    if is_time: font_c = "red" if (v < ov and v > 0 and ov > 0) else "blue" if (v > ov and v > 0 and ov > 0) else "black"
-                                    else: font_c = "red" if (v > ov and v > 0 and ov > 0) else "blue" if (v < ov and v > 0 and ov > 0) else "black"
-                                    fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor="white", line=dict(color=lc, width=lw))
+                                    
+                                    # 色付け判定
+                                    white_metrics = ["バットの角度", "打球方向", "飛距離"]
+                                    if any(m in comp_metric for m in white_metrics):
+                                        bg_c, font_c = "#FFFFFF", "black"
+                                    else:
+                                        bg_c = "white"
+                                        if is_time: font_c = "red" if (v < ov and v > 0 and ov > 0) else "blue" if (v > ov and v > 0 and ov > 0) else "black"
+                                        else: font_c = "red" if (v > ov and v > 0 and ov > 0) else "blue" if (v < ov and v > 0 and ov > 0) else "black"
+                                    
+                                    fig_pair.add_shape(type="rect", x0=c_idx-0.5, x1=c_idx+0.5, y0=2.5-r_idx, y1=1.5-r_idx, fillcolor=bg_c, line=dict(color=lc, width=lw))
                                     if v > 0: fig_pair.add_annotation(x=c_idx, y=2-r_idx, text=f"{v:.3f}" if is_time else f"{v:.1f}", showarrow=False, font=dict(color=font_c, weight="bold", size=16))
                             fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['左','中','右'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
                             st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
