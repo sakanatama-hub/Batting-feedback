@@ -47,11 +47,12 @@ def save_to_github(new_df):
     put_res = requests.put(url, headers=headers, json=data)
     return (True, "成功") if put_res.status_code in [200, 201] else (False, f"エラー {put_res.status_code}")
 
-# --- 共通ユーティリティ ---
+# --- 共通ユーティリティ (修正済み) ---
 def get_color(val, metric_name, row_idx=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
     
+    # --- アッパースイング度判定 (既存維持) ---
     if "アッパースイング度" in metric_name and row_idx is not None:
         if row_idx == 0: base, low, high = 6.5, 3.0, 10.0
         elif row_idx == 1: base, low, high = 11.5, 8.0, 15.0
@@ -73,6 +74,28 @@ def get_color(val, metric_name, row_idx=None):
             color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
         return color, "black"
 
+    # --- バットスピードの判定 (新規ロジック) ---
+    if "バットスピード" in metric_name:
+        if val < 100:
+            intensity = min((100 - val) / 20, 1.0)
+            color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
+            f_color = "white" if intensity > 0.5 else "black"
+        elif 100 <= val <= 110:
+            color = "rgba(255, 255, 255, 0.9)"
+            f_color = "black"
+        elif 110 < val < 120:
+            # 110-120: 薄い赤(255,200,200)から赤(255,0,0)へのグラデーション
+            intensity = (val - 110) / 10
+            g_val = int(200 * (1 - intensity))
+            color = f"rgba(255, {g_val}, {g_val}, 0.9)"
+            f_color = "black" if intensity < 0.6 else "white"
+        else:
+            # 120以上: 濃い赤
+            color = "rgba(139, 0, 0, 0.9)"
+            f_color = "white"
+        return color, f_color
+
+    # --- スイング時間/その他 (既存維持) ---
     if "スイング時間" in metric_name:
         base, sensitivity = 0.15, 0.05
     else:
@@ -215,7 +238,7 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # インパクトポイント (正常に戻した部分)
+                    # インパクトポイント
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -285,13 +308,12 @@ else:
                 st.subheader(f"🥇 {'理想範囲への的中率' if is_upper else '指標別'} トップ3")
                 
                 if is_upper:
-                    # 的中率計算ランキング
                     def check_success(row):
                         val, y = row[comp_metric], row['StrikeZoneY']
                         if pd.isna(val) or pd.isna(y): return None
-                        if y > SZ_Y_TH2: return 3.0 <= val <= 10.0      # 高め
-                        elif y > SZ_Y_TH1: return 8.0 <= val <= 15.0    # 真ん中
-                        else: return 10.0 <= val <= 20.0                # 低め
+                        if y > SZ_Y_TH2: return 3.0 <= val <= 10.0
+                        elif y > SZ_Y_TH1: return 8.0 <= val <= 15.0
+                        else: return 10.0 <= val <= 20.0
                     
                     fdf['is_success'] = fdf.apply(check_success, axis=1)
                     top3_series = fdf.groupby('Player Name')['is_success'].mean().sort_values(ascending=False).head(3)
