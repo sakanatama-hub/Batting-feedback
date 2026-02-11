@@ -47,7 +47,7 @@ def save_to_github(new_df):
     put_res = requests.put(url, headers=headers, json=data)
     return (True, "成功") if put_res.status_code in [200, 201] else (False, f"エラー {put_res.status_code}")
 
-# --- 共通ユーティリティ (スイング時間の色定義を修正) ---
+# --- 共通ユーティリティ (スイング時間の赤色範囲を拡大) ---
 def get_color(val, metric_name, row_idx=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
@@ -74,7 +74,7 @@ def get_color(val, metric_name, row_idx=None):
             color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
         return color, "black"
 
-    # --- バットスピードの判定 (直前の修正を維持) ---
+    # --- バットスピードの判定 (以前の修正を維持) ---
     if "バットスピード" in metric_name:
         if val < 100:
             color = "rgba(0, 0, 255, 0.9)"
@@ -92,14 +92,14 @@ def get_color(val, metric_name, row_idx=None):
             f_color = "white"
         return color, f_color
 
-    # --- スイング時間の判定 (新規修正ロジック) ---
+    # --- スイング時間の判定 (再修正ロジック) ---
     if "スイング時間" in metric_name:
-        if val < 0.13:
-            # 0.13未満: 赤
+        if val < 0.14:
+            # 0.13台以下: 赤
             color = "rgba(255, 0, 0, 0.9)"
             f_color = "white"
-        elif 0.13 <= val < 0.15:
-            # 0.14台 (0.13-0.15未満): 薄い赤
+        elif 0.14 <= val < 0.15:
+            # 0.14台: 薄い赤
             color = "rgba(255, 180, 180, 0.9)"
             f_color = "black"
         elif 0.15 <= val < 0.16:
@@ -116,7 +116,7 @@ def get_color(val, metric_name, row_idx=None):
             f_color = "white"
         return color, f_color
 
-    # --- その他 (デフォルト設定) ---
+    # --- その他 ---
     base, sensitivity = 105, 30
     diff = val - base
     intensity = min(abs(diff) / sensitivity, 1.0)
