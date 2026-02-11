@@ -47,36 +47,45 @@ def save_to_github(new_df):
     put_res = requests.put(url, headers=headers, json=data)
     return (True, "成功") if put_res.status_code in [200, 201] else (False, f"エラー {put_res.status_code}")
 
-# --- 共通ユーティリティ (角度の色定義を新規追加) ---
+# --- 共通ユーティリティ (修正：色定義) ---
 def get_color(val, metric_name, row_idx=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # --- 体とバットの角度 (インパクト) (新規修正) ---
+    # --- 体の回転によるバットの加速の大きさ（初動）(G) (新規追加修正) ---
+    if "体の回転によるバットの加速の大きさ" in metric_name:
+        if val <= 5:
+            color, f_color = "rgba(0, 0, 255, 0.9)", "white"          # 青
+        elif val <= 10:
+            color, f_color = "rgba(173, 216, 230, 0.9)", "black"      # 薄い青
+        elif val <= 14:
+            color, f_color = "rgba(255, 255, 255, 0.9)", "black"      # 白
+        elif val <= 20:
+            color, f_color = "rgba(255, 182, 193, 0.9)", "black"      # 薄い赤
+        else:
+            color, f_color = "rgba(255, 0, 0, 0.9)", "white"          # 赤
+        return color, f_color
+
+    # --- 体とバットの角度 (インパクト) ---
     if "体とバットの角度" in metric_name:
         if 85 <= val <= 95:
-            # 90に近づくほど赤を濃くする (85 or 95 で白っぽく、90で真っ赤)
             intensity = 1.0 - (abs(val - 90) / 5.0)
             gb_val = int(255 * (1 - intensity))
             color = f"rgba(255, {gb_val}, {gb_val}, 0.9)"
             f_color = "white" if intensity > 0.5 else "black"
         elif val < 85:
-            # 85から75にかけて緑へのグラデーション
             intensity = min(max((85 - val) / 10.0, 0.0), 1.0)
-            # 85に近いほど白(255,255,255)、75に近いほど緑(0,255,0)
             rb_val = int(255 * (1 - intensity))
             color = f"rgba({rb_val}, 255, {rb_val}, 0.9)"
             f_color = "black"
         else: # val > 95
-            # 95から105にかけて青へのグラデーション
             intensity = min(max((val - 95) / 10.0, 0.0), 1.0)
-            # 95に近いほど白(255,255,255)、105に近いほど青(0,0,255)
             rg_val = int(255 * (1 - intensity))
             color = f"rgba({rg_val}, {rg_val}, 255, 0.9)"
             f_color = "white" if intensity > 0.5 else "black"
         return color, f_color
 
-    # --- アッパースイング度判定 (既存維持) ---
+    # --- アッパースイング度判定 ---
     if "アッパースイング度" in metric_name and row_idx is not None:
         if row_idx == 0: base, low, high = 6.5, 3.0, 10.0
         elif row_idx == 1: base, low, high = 11.5, 8.0, 15.0
@@ -98,7 +107,7 @@ def get_color(val, metric_name, row_idx=None):
             color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
         return color, "black"
 
-    # --- バットスピードの判定 (以前の修正を維持) ---
+    # --- バットスピードの判定 ---
     if "バットスピード" in metric_name:
         if val < 100:
             color = "rgba(0, 0, 255, 0.9)"
@@ -116,7 +125,7 @@ def get_color(val, metric_name, row_idx=None):
             f_color = "white"
         return color, f_color
 
-    # --- スイング時間の判定 (直前の修正を維持) ---
+    # --- スイング時間の判定 ---
     if "スイング時間" in metric_name:
         if val < 0.14:
             color = "rgba(255, 0, 0, 0.9)"
@@ -143,7 +152,7 @@ def get_color(val, metric_name, row_idx=None):
     f_color = "black" if intensity < 0.4 else "white"
     return color, f_color
 
-# 以下、get_3x3_grid および Streamlit UIコードは変更なしのため省略 (必要であれば補完しますが、構造は維持されています)
+# --- 以降、変更なし ---
 def get_3x3_grid(df, metric):
     grid = np.zeros((3, 3))
     counts = np.zeros((3, 3))
