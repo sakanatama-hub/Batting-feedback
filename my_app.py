@@ -47,7 +47,7 @@ def save_to_github(new_df):
     put_res = requests.put(url, headers=headers, json=data)
     return (True, "成功") if put_res.status_code in [200, 201] else (False, f"エラー {put_res.status_code}")
 
-# --- 共通ユーティリティ (再修正済み) ---
+# --- 共通ユーティリティ (スイング時間の色定義を修正) ---
 def get_color(val, metric_name, row_idx=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
@@ -74,40 +74,53 @@ def get_color(val, metric_name, row_idx=None):
             color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
         return color, "black"
 
-    # --- バットスピードの判定 (再修正ロジック) ---
+    # --- バットスピードの判定 (直前の修正を維持) ---
     if "バットスピード" in metric_name:
         if val < 100:
-            # 100未満: 一律で青
             color = "rgba(0, 0, 255, 0.9)"
             f_color = "white"
         elif 100 <= val <= 110:
-            # 100-110: 白
             color = "rgba(255, 255, 255, 0.9)"
             f_color = "black"
         elif 110 < val < 120:
-            # 110-120: 白(255,255,255)から標準の赤(255,0,0)へのグラデーション
             intensity = (val - 110) / 10
-            # 110に近いほど白、120に近いほど赤
             gb_val = int(255 * (1 - intensity))
             color = f"rgba(255, {gb_val}, {gb_val}, 0.9)"
             f_color = "black" if intensity < 0.6 else "white"
         else:
-            # 120以上: 標準の赤
             color = "rgba(255, 0, 0, 0.9)"
             f_color = "white"
         return color, f_color
 
-    # --- スイング時間/その他 (既存維持) ---
+    # --- スイング時間の判定 (新規修正ロジック) ---
     if "スイング時間" in metric_name:
-        base, sensitivity = 0.15, 0.05
-    else:
-        base, sensitivity = 105, 30
+        if val < 0.13:
+            # 0.13未満: 赤
+            color = "rgba(255, 0, 0, 0.9)"
+            f_color = "white"
+        elif 0.13 <= val < 0.15:
+            # 0.14台 (0.13-0.15未満): 薄い赤
+            color = "rgba(255, 180, 180, 0.9)"
+            f_color = "black"
+        elif 0.15 <= val < 0.16:
+            # 0.15台: 白
+            color = "rgba(255, 255, 255, 0.9)"
+            f_color = "black"
+        elif 0.16 <= val < 0.17:
+            # 0.16台: 薄い青
+            color = "rgba(180, 180, 255, 0.9)"
+            f_color = "black"
+        else:
+            # 0.17以上: 青
+            color = "rgba(0, 0, 255, 0.9)"
+            f_color = "white"
+        return color, f_color
+
+    # --- その他 (デフォルト設定) ---
+    base, sensitivity = 105, 30
     diff = val - base
     intensity = min(abs(diff) / sensitivity, 1.0)
-    if "スイング時間" in metric_name:
-        color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff < 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
-    else:
-        color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff > 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
+    color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff > 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
     f_color = "black" if intensity < 0.4 else "white"
     return color, f_color
 
