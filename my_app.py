@@ -52,7 +52,21 @@ def get_color(val, metric_name, row_idx=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # --- 体の回転によるバットの加速の大きさ（初動）(G) (新規追加修正) ---
+    # --- パワー (新規追加修正) ---
+    if "パワー" in metric_name:
+        if val < 3:
+            color, f_color = "rgba(0, 0, 255, 0.9)", "white"          # 青
+        elif val <= 3.5:
+            color, f_color = "rgba(173, 216, 230, 0.9)", "black"      # 薄い青
+        elif val <= 4:
+            color, f_color = "rgba(255, 255, 255, 0.9)", "black"      # 白
+        elif val <= 4.5:
+            color, f_color = "rgba(255, 182, 193, 0.9)", "black"      # 薄い赤
+        else: # 4.5より大きい
+            color, f_color = "rgba(255, 0, 0, 0.9)", "white"          # 赤
+        return color, f_color
+
+    # --- 体の回転によるバットの加速の大きさ（初動）(G) ---
     if "体の回転によるバットの加速の大きさ" in metric_name:
         if val <= 5:
             color, f_color = "rgba(0, 0, 255, 0.9)", "white"          # 青
