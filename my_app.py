@@ -52,8 +52,8 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # --- 指定された3項目を白固定にする ---
-    white_metrics = ["バットの角度", "打球方向", "飛距離"]
+    # --- 指定された3項目を白固定にする（名称の揺れに対応） ---
+    white_metrics = ["バット角度", "バットの角度", "打球方向", "飛距離"]
     if any(m in metric_name for m in white_metrics):
         return "#FFFFFF", "black"
 
@@ -385,7 +385,7 @@ else:
                                     lw, lc = (5, "yellow") if diff >= limit else (1, "gray")
                                     
                                     # 色付け判定
-                                    white_metrics = ["バットの角度", "打球方向", "飛距離"]
+                                    white_metrics = ["バット角度", "バットの角度", "打球方向", "飛距離"]
                                     if any(m in comp_metric for m in white_metrics):
                                         bg_c, font_c = "#FFFFFF", "black"
                                     else:
