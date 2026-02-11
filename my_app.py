@@ -52,10 +52,23 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
     
-    # --- 指定された3項目を白固定にする（名称の揺れに対応） ---
+    # --- 指定された3項目を白固定にする ---
     white_metrics = ["バット角度", "バットの角度", "打球方向", "飛距離"]
     if any(m in metric_name for m in white_metrics):
         return "#FFFFFF", "black"
+
+    # --- 打球速度の判定 ---
+    if "打球速度" in metric_name:
+        if val < 140:
+            return "rgba(0, 0, 255, 0.9)", "white"  # 青
+        elif 140 <= val < 145:
+            return "rgba(173, 216, 230, 0.9)", "black"  # 薄い青
+        elif 145 <= val <= 152:
+            return "rgba(255, 255, 255, 0.9)", "black"  # 白
+        elif 153 <= val <= 160:
+            return "rgba(255, 182, 193, 0.9)", "black"  # 薄い赤
+        else:
+            return "rgba(255, 0, 0, 0.9)", "white"  # 赤
 
     # --- 手の最大スピード (効率ベース) ---
     if "手の最大スピード" in metric_name:
@@ -388,6 +401,8 @@ else:
                                     white_metrics = ["バット角度", "バットの角度", "打球方向", "飛距離"]
                                     if any(m in comp_metric for m in white_metrics):
                                         bg_c, font_c = "#FFFFFF", "black"
+                                    elif "打球速度" in comp_metric:
+                                        bg_c, font_c = get_color(v, comp_metric)
                                     else:
                                         bg_c = "white"
                                         if is_time: font_c = "red" if (v < ov and v > 0 and ov > 0) else "blue" if (v > ov and v > 0 and ov > 0) else "black"
