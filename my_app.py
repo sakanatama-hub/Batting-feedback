@@ -47,7 +47,7 @@ def save_to_github(new_df):
     put_res = requests.put(url, headers=headers, json=data)
     return (True, "成功") if put_res.status_code in [200, 201] else (False, f"エラー {put_res.status_code}")
 
-# --- 共通ユーティリティ (修正済み) ---
+# --- 共通ユーティリティ (再修正済み) ---
 def get_color(val, metric_name, row_idx=None):
     if val == 0 or pd.isna(val):
         return "rgba(255, 255, 255, 0.1)", "white"
@@ -74,24 +74,26 @@ def get_color(val, metric_name, row_idx=None):
             color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
         return color, "black"
 
-    # --- バットスピードの判定 (新規ロジック) ---
+    # --- バットスピードの判定 (再修正ロジック) ---
     if "バットスピード" in metric_name:
         if val < 100:
-            intensity = min((100 - val) / 20, 1.0)
-            color = f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
-            f_color = "white" if intensity > 0.5 else "black"
+            # 100未満: 一律で青
+            color = "rgba(0, 0, 255, 0.9)"
+            f_color = "white"
         elif 100 <= val <= 110:
+            # 100-110: 白
             color = "rgba(255, 255, 255, 0.9)"
             f_color = "black"
         elif 110 < val < 120:
-            # 110-120: 薄い赤(255,200,200)から赤(255,0,0)へのグラデーション
+            # 110-120: 白(255,255,255)から標準の赤(255,0,0)へのグラデーション
             intensity = (val - 110) / 10
-            g_val = int(200 * (1 - intensity))
-            color = f"rgba(255, {g_val}, {g_val}, 0.9)"
+            # 110に近いほど白、120に近いほど赤
+            gb_val = int(255 * (1 - intensity))
+            color = f"rgba(255, {gb_val}, {gb_val}, 0.9)"
             f_color = "black" if intensity < 0.6 else "white"
         else:
-            # 120以上: 濃い赤
-            color = "rgba(139, 0, 0, 0.9)"
+            # 120以上: 標準の赤
+            color = "rgba(255, 0, 0, 0.9)"
             f_color = "white"
         return color, f_color
 
