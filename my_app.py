@@ -27,7 +27,6 @@ def load_data_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
     try:
         df = pd.read_csv(url, dtype=str)
-        # 列名の前後の空白を削除（エクセル対策）
         df.columns = df.columns.str.strip()
         return df
     except:
@@ -182,18 +181,23 @@ else:
     with tab1:
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
-            db_df['スイング条件_str'] = db_df['スイング条件'].fillna("未設定").astype(str).str.strip()
-            all_possible_conds = sorted(db_df['スイング条件_str'].unique().tolist())
+            # --- データの参照修正 ---
+            player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
+            cond_col = 'スイング条件' if 'スイング条件' in db_df.columns else 'スイング条件_str'
+            db_df[cond_col] = db_df[cond_col].fillna("未設定").astype(str).str.strip()
+            
+            all_possible_conds = sorted(db_df[cond_col].unique().tolist())
+            existing_players = sorted(db_df[player_col].dropna().unique().tolist())
+
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
             with c1: 
-                target_player = st.selectbox("選手を選択", PLAYERS, key="p_tab1")
+                target_player = st.selectbox("選手を選択", existing_players, key="p_tab1")
             
-            pdf = db_df[db_df['Player Name'] == target_player].copy()
+            pdf = db_df[db_df[player_col] == target_player].copy()
             if not pdf.empty:
-                # 日付処理の修正（DateTime列の形式変化に対応）
+                # 日付処理の修正
                 pdf['Date_Only_Str'] = pdf['DateTime'].astype(str).str.extract(r'(\d{4}-\d{2}-\d{2})')[0]
                 pdf['Date_Only'] = pd.to_datetime(pdf['Date_Only_Str'], errors='coerce').dt.date
-
                 valid_dates = pdf['Date_Only'].dropna()
                 min_date = min(valid_dates) if not valid_dates.empty else datetime.date(2024,1,1)
                 max_date = max(valid_dates) if not valid_dates.empty else datetime.date.today()
@@ -201,18 +205,15 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
-                    # --- 指標の抽出 (列順不問・キーワード方式) ---
-                    all_cols = pdf.columns.tolist()
+                    # 指標選択の修正
                     keywords = ["スコア", "速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "G)", "度"]
-                    valid_metrics = [c for c in all_cols if any(k in str(c) for k in keywords)]
-                    # 数値が含まれる列のみ
+                    valid_metrics = [c for c in pdf.columns if any(k in str(c) for k in keywords)]
                     valid_metrics = [c for c in valid_metrics if pd.to_numeric(pdf[c], errors='coerce').dropna().any()]
-
                     priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
                     sorted_metrics = [m for m in priority if m in valid_metrics] + [m for m in valid_metrics if m not in priority]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
-                mask = (pdf['スイング条件_str'].isin(sel_conds))
+                mask = (pdf[cond_col].isin(sel_conds))
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
                     mask &= (pdf['Date_Only'] >= date_range[0]) & (pdf['Date_Only'] <= date_range[1])
                 
@@ -296,7 +297,7 @@ else:
                         pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
                     pdf_for_graph['Month_Name'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.month.astype(str) + "月"
                     pdf_for_graph['Month_Sort'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.strftime('%Y-%m')
-                    graph_df = pdf_for_graph[pdf_for_graph['スイング条件_str'].isin(sel_conds)].dropna(subset=[target_metric])
+                    graph_df = pdf_for_graph[pdf_for_graph[cond_col].isin(sel_conds)].dropna(subset=[target_metric])
                     if not graph_df.empty:
                         monthly_stats = graph_df.groupby(['Month_Sort', 'Month_Name'])[target_metric].agg(['mean', 'max', 'min']).reset_index()
                         monthly_stats = monthly_stats.sort_values('Month_Sort')
@@ -312,21 +313,22 @@ else:
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
-            # --- 比較指標の抽出 ---
-            all_cols_c = db_df.columns.tolist()
+            player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
+            existing_players = sorted(db_df[player_col].dropna().unique().tolist())
             keywords = ["スコア", "速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "G)", "度"]
-            valid_comp_metrics = [c for c in all_cols_c if any(k in str(c) for k in keywords)]
+            valid_comp_metrics = [c for c in db_df.columns if any(k in str(c) for k in keywords)]
             valid_comp_metrics = [c for c in valid_comp_metrics if pd.to_numeric(db_df[c], errors='coerce').dropna().any()]
 
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", valid_comp_metrics, key="m_tab2")
             with c2:
-                all_conds_c = sorted([str(x) for x in db_df['スイング条件'].fillna("未設定").astype(str).str.strip().unique().tolist()])
+                cond_col = 'スイング条件' if 'スイング条件' in db_df.columns else 'スイング条件_str'
+                all_conds_c = sorted([str(x) for x in db_df[cond_col].unique().tolist()])
                 sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
             
             db_df_c = db_df.copy()
-            db_df_c['スイング条件_str'] = db_df_c['スイング条件'].fillna("未設定").astype(str).str.strip()
-            fdf = db_df_c[db_df_c['スイング条件_str'].isin(sel_conds_c)].copy()
+            db_df_c[cond_col] = db_df_c[cond_col].fillna("未設定").astype(str).str.strip()
+            fdf = db_df_c[db_df_c[cond_col].isin(sel_conds_c)].copy()
             
             if not fdf.empty and comp_metric:
                 if "手の最大スピード" in comp_metric:
@@ -347,10 +349,10 @@ else:
                         elif y > SZ_Y_TH1: return 8.0 <= val <= 15.0
                         else: return 10.0 <= val <= 20.0
                     fdf['is_success'] = fdf.apply(check_success, axis=1)
-                    top3_series = fdf.groupby('Player Name')['is_success'].mean().sort_values(ascending=False).head(3)
+                    top3_series = fdf.groupby(player_col)['is_success'].mean().sort_values(ascending=False).head(3)
                     top3_scores = [f"{s*100:.1f}%" for s in top3_series.values]
                 else:
-                    top3_series = fdf.groupby('Player Name')[comp_metric].mean().sort_values(ascending=is_time).head(3)
+                    top3_series = fdf.groupby(player_col)[comp_metric].mean().sort_values(ascending=is_time).head(3)
                     top3_scores = [f"{s:.2f}" if "手の最大スピード" in comp_metric else (f"{s:.3f}" if is_time else f"{s:.1f}") for s in top3_series.values]
 
                 top3_names = top3_series.index.tolist()
@@ -361,7 +363,7 @@ else:
                         name, score_str, rank = top3_names[idx], top3_scores[idx], idx + 1
                         with t_cols[i]:
                             st.markdown(f"<div style='text-align: center; background-color: #333; padding: 5px; border-radius: 5px;'><span style='font-size: 1.1rem; font-weight: bold; color: white;'>{rank}位: {name}</span><br><span style='font-size: 0.9rem; color: #ddd;'>{score_str}</span></div>", unsafe_allow_html=True)
-                            grid, _ = get_3x3_grid(fdf[fdf['Player Name'] == name], comp_metric)
+                            grid, _ = get_3x3_grid(fdf[fdf[player_col] == name], comp_metric)
                             fig = go.Figure()
                             for r_idx in range(3):
                                 for c_idx in range(3):
@@ -374,12 +376,12 @@ else:
                 st.markdown("---")
                 st.subheader("🆚 2名ピックアップ比較")
                 ca, cb = st.columns(2)
-                with ca: player_a = st.selectbox("選手Aを選択", PLAYERS, key="compare_a")
-                with cb: player_b = st.selectbox("選手Bを選択", PLAYERS, key="compare_b")
+                with ca: player_a = st.selectbox("選手Aを選択", existing_players, key="compare_a")
+                with cb: player_b = st.selectbox("選手Bを選択", existing_players, key="compare_b")
                 if player_a and player_b:
                     limit = 0.05 if "手の最大スピード" in comp_metric else (0.010 if is_time else 5.0)
-                    g_a, _ = get_3x3_grid(fdf[fdf['Player Name'] == player_a], comp_metric)
-                    g_b, _ = get_3x3_grid(fdf[fdf['Player Name'] == player_b], comp_metric)
+                    g_a, _ = get_3x3_grid(fdf[fdf[player_col] == player_a], comp_metric)
+                    g_b, _ = get_3x3_grid(fdf[fdf[player_col] == player_b], comp_metric)
                     p_cols = st.columns(2)
                     for idx, (name, mine, yours) in enumerate([(player_a, g_a, g_b), (player_b, g_b, g_a)]):
                         with p_cols[idx]:
