@@ -27,6 +27,8 @@ def load_data_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
     try:
         df = pd.read_csv(url, dtype=str)
+        # 列名の前後の空白を削除（エクセル対策）
+        df.columns = df.columns.str.strip()
         return df
     except:
         return pd.DataFrame()
@@ -188,7 +190,8 @@ else:
             
             pdf = db_df[db_df['Player Name'] == target_player].copy()
             if not pdf.empty:
-                pdf['Date_Only_Str'] = pdf['DateTime'].str[:10]
+                # 日付処理の修正（DateTime列の形式変化に対応）
+                pdf['Date_Only_Str'] = pdf['DateTime'].astype(str).str.extract(r'(\d{4}-\d{2}-\d{2})')[0]
                 pdf['Date_Only'] = pd.to_datetime(pdf['Date_Only_Str'], errors='coerce').dt.date
 
                 valid_dates = pdf['Date_Only'].dropna()
@@ -198,13 +201,12 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
+                    # --- 指標の抽出 (列順不問・キーワード方式) ---
                     all_cols = pdf.columns.tolist()
-                    try:
-                        v_idx = pdf.columns.get_loc("オンプレーンスコア")
-                        candidates = all_cols[v_idx:]
-                    except:
-                        candidates = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
-                    valid_metrics = [c for c in candidates if not pd.to_numeric(pdf[c], errors='coerce').dropna().empty and any(ord(char) > 255 for char in c)]
+                    keywords = ["スコア", "速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "G)", "度"]
+                    valid_metrics = [c for c in all_cols if any(k in str(c) for k in keywords)]
+                    # 数値が含まれる列のみ
+                    valid_metrics = [c for c in valid_metrics if pd.to_numeric(pdf[c], errors='coerce').dropna().any()]
 
                     priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
                     sorted_metrics = [m for m in priority if m in valid_metrics] + [m for m in valid_metrics if m not in priority]
@@ -310,12 +312,12 @@ else:
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
-            all_cols = db_df.columns.tolist()
-            try:
-                v_idx = db_df.columns.get_loc("オンプレーンスコア")
-                all_metrics = all_cols[v_idx:]
-            except: all_metrics = [c for c in all_cols if "速度" in c or "角度" in c or "時間" in c]
-            valid_comp_metrics = [c for c in all_metrics if pd.to_numeric(db_df[c], errors='coerce').dropna().any() and any(ord(char) > 255 for char in c)]
+            # --- 比較指標の抽出 ---
+            all_cols_c = db_df.columns.tolist()
+            keywords = ["スコア", "速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "G)", "度"]
+            valid_comp_metrics = [c for c in all_cols_c if any(k in str(c) for k in keywords)]
+            valid_comp_metrics = [c for c in valid_comp_metrics if pd.to_numeric(db_df[c], errors='coerce').dropna().any()]
+
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", valid_comp_metrics, key="m_tab2")
             with c2:
