@@ -1,3 +1,4 @@
+import streamlit as set_page_config
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -23,20 +24,11 @@ SZ_Y_TH1, SZ_Y_TH2 = 66.6, 88.3
 PLAYER_HANDS = {"#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", "#99 尾瀬 雄大": "左"}
 PLAYERS = list(PLAYER_HANDS.keys())
 
-# --- 指標の表示順序定義 ---
-TARGET_ORDER = [
-    "バットスピード",
-    "スイング時間",
-    "アッパースイング度",
-    "打球速度",
-    "打球角度",
-    "打球方向",
-    "体とバットの角度",
-    "加速の大きさ",
-    "パワー",
-    "手の最大スピード",
-    "バット角度",
-    "飛距離"
+# --- 並び替え用キーワードリスト ---
+ORDER_KEYWORDS = [
+    "バットスピード", "スイング時間", "アッパースイング度", "打球速度", 
+    "打球角度", "打球方向", "体とバットの角度", "加速の大きさ", 
+    "パワー", "手の最大スピード", "バット角度", "飛距離"
 ]
 
 # --- GitHub連携関数 ---
@@ -212,7 +204,8 @@ else:
             existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
 
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
-            with c1: target_player = st.selectbox("選手を選択", existing_players, key="p_tab1")
+            with c1: 
+                target_player = st.selectbox("選手を選択", existing_players, key="p_tab1")
             
             pdf = db_df[db_df[player_col] == target_player].copy()
             if not pdf.empty:
@@ -225,19 +218,16 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
-                    # ここだけ修正：元の列名リストを取得し、TARGET_ORDERの順に並べ替える
+                    # 指標選択：キーワード順に列名を並び替える（そのままの機能）
                     raw_cols = pdf.columns.tolist()
                     sorted_metrics = []
-                    # まず指定の順番でキーワードが含まれる列を探す
-                    for key in TARGET_ORDER:
+                    for key in ORDER_KEYWORDS:
                         for col in raw_cols:
-                            if key in col:
-                                if col not in sorted_metrics: sorted_metrics.append(col)
-                    # 指定以外の列があれば後ろに追加（これで項目が消えるのを防ぐ）
+                            if key in col and col not in sorted_metrics:
+                                sorted_metrics.append(col)
                     for col in raw_cols:
                         if col not in sorted_metrics and col not in ['DateTime', 'Player Name', 'StrikeZoneX', 'StrikeZoneY', 'Date_Only', 'Date_Only_Str', cond_col]:
                             sorted_metrics.append(col)
-                    
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
                 mask = (pdf[cond_col].isin(sel_conds))
@@ -267,6 +257,7 @@ else:
                         with col_m3:
                             st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
+                    # ヒートマップ表示（元のまま）
                     st.subheader(f"📊 {target_metric}：ゾーン別平均")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
@@ -300,21 +291,39 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
+                    # インパクトポイント表示（元のまま）
+                    st.subheader(f"📍 {target_metric}：インパクトポイント")
+                    fig_point = go.Figure()
+                    fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
+                    fig_point.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
+                    bx = 75 if hand == "左" else -75
+                    fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=160, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
+                    fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
+                    for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
+                        plot_x = row['StrikeZoneX']
+                        r_pt = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
+                        dot_color, _ = get_color(row[target_metric], target_metric, row_idx=r_pt)
+                        fig_point.add_trace(go.Scatter(x=[plot_x], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
+                    fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
+                    st.plotly_chart(fig_point, use_container_width=True)
+
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
             existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
             
-            # 指標のソート（タブ1と同様）
+            # 比較指標：タブ1と同じ並び替えロジック
             raw_cols_c = [c for c in db_df.columns if c not in ['DateTime', 'Player Name', 'StrikeZoneX', 'StrikeZoneY', cond_col]]
             sorted_comp_metrics = []
-            for key in TARGET_ORDER:
+            for key in ORDER_KEYWORDS:
                 for col in raw_cols_c:
-                    if key in col:
-                        if col not in sorted_comp_metrics: sorted_comp_metrics.append(col)
+                    if key in col and col not in sorted_comp_metrics:
+                        sorted_comp_metrics.append(col)
             for col in raw_cols_c:
-                if col not in sorted_comp_metrics: sorted_comp_metrics.append(col)
+                if col not in sorted_comp_metrics:
+                    sorted_comp_metrics.append(col)
 
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", sorted_comp_metrics, key="m_tab2")
