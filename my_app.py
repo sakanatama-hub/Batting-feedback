@@ -1,4 +1,3 @@
-import streamlit as set_page_config
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -24,7 +23,7 @@ SZ_Y_TH1, SZ_Y_TH2 = 66.6, 88.3
 PLAYER_HANDS = {"#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", "#99 尾瀬 雄大": "左"}
 PLAYERS = list(PLAYER_HANDS.keys())
 
-# --- 並び替え用キーワードリスト ---
+# --- 指標の表示順序定義 ---
 ORDER_KEYWORDS = [
     "バットスピード", "スイング時間", "アッパースイング度", "打球速度", 
     "打球角度", "打球方向", "体とバットの角度", "加速の大きさ", 
@@ -204,8 +203,7 @@ else:
             existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
 
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
-            with c1: 
-                target_player = st.selectbox("選手を選択", existing_players, key="p_tab1")
+            with c1: target_player = st.selectbox("選手を選択", existing_players, key="p_tab1")
             
             pdf = db_df[db_df[player_col] == target_player].copy()
             if not pdf.empty:
@@ -218,7 +216,7 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
-                    # 指標選択：キーワード順に列名を並び替える（そのままの機能）
+                    # 指標並び替えロジック
                     raw_cols = pdf.columns.tolist()
                     sorted_metrics = []
                     for key in ORDER_KEYWORDS:
@@ -257,7 +255,16 @@ else:
                         with col_m3:
                             st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
-                    # ヒートマップ表示（元のまま）
+                    # 月間推移グラフ
+                    st.subheader(f"📈 {target_metric}：月間推移")
+                    vdf['Month'] = pd.to_datetime(vdf['DateTime']).dt.to_period('M').astype(str)
+                    monthly_avg = vdf.groupby('Month')[target_metric].mean().reset_index()
+                    fig_trend = go.Figure()
+                    fig_trend.add_trace(go.Scatter(x=monthly_avg['Month'], y=monthly_avg[target_metric], mode='lines+markers+text', text=[f"{v:.1f}" for v in monthly_avg[target_metric]], textposition="top center", line=dict(color='orange', width=4), marker=dict(size=10)))
+                    fig_trend.update_layout(height=400, xaxis_title="月", yaxis_title=target_metric, margin=dict(l=20, r=20, t=20, b=20))
+                    st.plotly_chart(fig_trend, use_container_width=True)
+
+                    # ゾーン別平均（ヒートマップ）
                     st.subheader(f"📊 {target_metric}：ゾーン別平均")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
@@ -269,14 +276,12 @@ else:
                     fig_heat.add_shape(type="circle", x0=-120, x1=120, y0=-50, y1=160, fillcolor="#8B4513", line_width=0, layer="below")
                     fig_heat.add_shape(type="path", path="M -25 70 L 25 70 L 25 45 L 0 5 L -25 45 Z", fillcolor="white", line=dict(color="#444", width=3), layer="below")
                     grid_side = 55; z_x_start, z_y_start = -(grid_side * 2.5), 180
-                    
                     grid_val = np.zeros((5, 5)); grid_count = np.zeros((5, 5))
                     for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
                         r = 0 if row['StrikeZoneY'] > SZ_Y_MAX else 1 if row['StrikeZoneY'] > SZ_Y_TH2 else 2 if row['StrikeZoneY'] > SZ_Y_TH1 else 3 if row['StrikeZoneY'] > SZ_Y_MIN else 4
                         c = 0 if row['StrikeZoneX'] < SZ_X_MIN else 1 if row['StrikeZoneX'] < SZ_X_TH1 else 2 if row['StrikeZoneX'] <= SZ_X_TH2 else 3 if row['StrikeZoneX'] <= SZ_X_MAX else 4
                         grid_val[r, c] += row[target_metric]; grid_count[r, c] += 1
                     display_grid = np.where(grid_count > 0, grid_val / grid_count, 0)
-                    
                     for r in range(5):
                         for c in range(5):
                             x0, x1 = z_x_start + c * grid_side, z_x_start + (c + 1) * grid_side
@@ -291,7 +296,7 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # インパクトポイント表示（元のまま）
+                    # インパクトポイント
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -314,7 +319,6 @@ else:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
             existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
             
-            # 比較指標：タブ1と同じ並び替えロジック
             raw_cols_c = [c for c in db_df.columns if c not in ['DateTime', 'Player Name', 'StrikeZoneX', 'StrikeZoneY', cond_col]]
             sorted_comp_metrics = []
             for key in ORDER_KEYWORDS:
