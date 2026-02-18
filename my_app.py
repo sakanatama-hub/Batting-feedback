@@ -23,9 +23,8 @@ SZ_Y_TH1, SZ_Y_TH2 = 66.6, 88.3
 PLAYER_HANDS = {"#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", "#99 尾瀬 雄大": "左"}
 PLAYERS = list(PLAYER_HANDS.keys())
 
-# --- 指標の表示順序キーワード定義 ---
-# このキーワードが含まれる列名を、この順番で探して表示します
-SEARCH_KEYWORDS = [
+# --- 指標の表示順序定義 ---
+TARGET_ORDER = [
     "バットスピード",
     "スイング時間",
     "アッパースイング度",
@@ -169,14 +168,9 @@ def get_3x3_grid(df, metric):
     df_c = df.copy()
     df_c['StrikeZoneX'] = pd.to_numeric(df_c['StrikeZoneX'], errors='coerce')
     df_c['StrikeZoneY'] = pd.to_numeric(df_c['StrikeZoneY'], errors='coerce')
-    is_hand = "手の最大スピード" in metric and any("バットスピード" in c for c in df_c.columns)
+    is_hand = "手の最大スピード" in metric and "バットスピード (km/h)" in df_c.columns
     df_c[metric] = pd.to_numeric(df_c[metric], errors='coerce')
-    
-    # 手の最大スピード時の効率計算用
-    bs_col = next((c for c in df_c.columns if "バットスピード" in c), None)
-    if is_hand and bs_col: 
-        df_c['eff_calc'] = pd.to_numeric(df_c[bs_col], errors='coerce') / df_c[metric]
-        
+    if is_hand: df_c['eff_calc'] = pd.to_numeric(df_c['バットスピード (km/h)'], errors='coerce') / df_c[metric]
     valid = df_c.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
     for _, row in valid.iterrows():
         c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
@@ -218,8 +212,7 @@ else:
             existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
 
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
-            with c1: 
-                target_player = st.selectbox("選手を選択", existing_players, key="p_tab1")
+            with c1: target_player = st.selectbox("選手を選択", existing_players, key="p_tab1")
             
             pdf = db_df[db_df[player_col] == target_player].copy()
             if not pdf.empty:
@@ -232,13 +225,19 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
-                    # 指標をキーワード順に抽出
+                    # ここだけ修正：元の列名リストを取得し、TARGET_ORDERの順に並べ替える
+                    raw_cols = pdf.columns.tolist()
                     sorted_metrics = []
-                    for key in SEARCH_KEYWORDS:
-                        for col in pdf.columns:
-                            if key in str(col):
-                                sorted_metrics.append(col)
-                                break
+                    # まず指定の順番でキーワードが含まれる列を探す
+                    for key in TARGET_ORDER:
+                        for col in raw_cols:
+                            if key in col:
+                                if col not in sorted_metrics: sorted_metrics.append(col)
+                    # 指定以外の列があれば後ろに追加（これで項目が消えるのを防ぐ）
+                    for col in raw_cols:
+                        if col not in sorted_metrics and col not in ['DateTime', 'Player Name', 'StrikeZoneX', 'StrikeZoneY', 'Date_Only', 'Date_Only_Str', cond_col]:
+                            sorted_metrics.append(col)
+                    
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
                 mask = (pdf[cond_col].isin(sel_conds))
@@ -250,9 +249,8 @@ else:
                 if vdf.empty:
                     st.warning(f"⚠️ 一致するデータがありません。")
                 else:
-                    bs_col = next((c for c in vdf.columns if "バットスピード" in c), None)
-                    if "手の最大スピード" in target_metric and bs_col:
-                        vdf[target_metric] = pd.to_numeric(vdf[bs_col], errors='coerce') / pd.to_numeric(vdf[target_metric], errors='coerce')
+                    if "手の最大スピード" in target_metric and "バットスピード (km/h)" in vdf.columns:
+                        vdf[target_metric] = pd.to_numeric(vdf['バットスピード (km/h)'], errors='coerce') / pd.to_numeric(vdf[target_metric], errors='coerce')
                     else:
                         vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
                     
@@ -308,13 +306,15 @@ else:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
             existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
             
-            # 指標をキーワード順に抽出
+            # 指標のソート（タブ1と同様）
+            raw_cols_c = [c for c in db_df.columns if c not in ['DateTime', 'Player Name', 'StrikeZoneX', 'StrikeZoneY', cond_col]]
             sorted_comp_metrics = []
-            for key in SEARCH_KEYWORDS:
-                for col in db_df.columns:
-                    if key in str(col):
-                        sorted_comp_metrics.append(col)
-                        break
+            for key in TARGET_ORDER:
+                for col in raw_cols_c:
+                    if key in col:
+                        if col not in sorted_comp_metrics: sorted_comp_metrics.append(col)
+            for col in raw_cols_c:
+                if col not in sorted_comp_metrics: sorted_comp_metrics.append(col)
 
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", sorted_comp_metrics, key="m_tab2")
@@ -328,9 +328,8 @@ else:
             fdf = db_df_c[db_df_c[cond_col].isin(sel_conds_c)].copy()
             
             if not fdf.empty and comp_metric:
-                bs_col = next((c for c in fdf.columns if "バットスピード" in c), None)
-                if "手の最大スピード" in comp_metric and bs_col:
-                    fdf[comp_metric] = pd.to_numeric(fdf[bs_col], errors='coerce') / pd.to_numeric(fdf[comp_metric], errors='coerce')
+                if "手の最大スピード" in comp_metric and "バットスピード (km/h)" in fdf.columns:
+                    fdf[comp_metric] = pd.to_numeric(fdf['バットスピード (km/h)'], errors='coerce') / pd.to_numeric(fdf[comp_metric], errors='coerce')
                 else:
                     fdf[comp_metric] = pd.to_numeric(fdf[comp_metric], errors='coerce')
                 fdf['StrikeZoneY'] = pd.to_numeric(fdf['StrikeZoneY'], errors='coerce')
