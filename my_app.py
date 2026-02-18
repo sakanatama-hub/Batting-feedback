@@ -23,7 +23,7 @@ SZ_Y_TH1, SZ_Y_TH2 = 66.6, 88.3
 PLAYER_HANDS = {"#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", "#99 尾瀬 雄大": "左"}
 PLAYERS = list(PLAYER_HANDS.keys())
 
-# --- 指標の表示順序定義 ---
+# --- 並び替え用キーワード ---
 ORDER_KEYWORDS = [
     "バットスピード", "スイング時間", "アッパースイング度", "打球速度", 
     "打球角度", "打球方向", "体とバットの角度", "加速の大きさ", 
@@ -216,13 +216,12 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
-                    # 指標並び替えロジック
+                    # 指標並び替え（ここだけ変更）
                     raw_cols = pdf.columns.tolist()
                     sorted_metrics = []
                     for key in ORDER_KEYWORDS:
                         for col in raw_cols:
-                            if key in col and col not in sorted_metrics:
-                                sorted_metrics.append(col)
+                            if key in col and col not in sorted_metrics: sorted_metrics.append(col)
                     for col in raw_cols:
                         if col not in sorted_metrics and col not in ['DateTime', 'Player Name', 'StrikeZoneX', 'StrikeZoneY', 'Date_Only', 'Date_Only_Str', cond_col]:
                             sorted_metrics.append(col)
@@ -255,16 +254,7 @@ else:
                         with col_m3:
                             st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
-                    # 月間推移グラフ
-                    st.subheader(f"📈 {target_metric}：月間推移")
-                    vdf['Month'] = pd.to_datetime(vdf['DateTime']).dt.to_period('M').astype(str)
-                    monthly_avg = vdf.groupby('Month')[target_metric].mean().reset_index()
-                    fig_trend = go.Figure()
-                    fig_trend.add_trace(go.Scatter(x=monthly_avg['Month'], y=monthly_avg[target_metric], mode='lines+markers+text', text=[f"{v:.1f}" for v in monthly_avg[target_metric]], textposition="top center", line=dict(color='orange', width=4), marker=dict(size=10)))
-                    fig_trend.update_layout(height=400, xaxis_title="月", yaxis_title=target_metric, margin=dict(l=20, r=20, t=20, b=20))
-                    st.plotly_chart(fig_trend, use_container_width=True)
-
-                    # ゾーン別平均（ヒートマップ）
+                    # --- 元の順序：ゾーン別平均 ---
                     st.subheader(f"📊 {target_metric}：ゾーン別平均")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
@@ -296,7 +286,7 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # インパクトポイント
+                    # --- 元の順序：インパクトポイント ---
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -313,6 +303,15 @@ else:
                     fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True)
 
+                    # --- 元の順序：月間推移 ---
+                    st.subheader(f"📈 {target_metric}：月間推移")
+                    vdf['Month'] = pd.to_datetime(vdf['DateTime']).dt.to_period('M').astype(str)
+                    monthly_avg = vdf.groupby('Month')[target_metric].mean().reset_index()
+                    fig_trend = go.Figure()
+                    fig_trend.add_trace(go.Scatter(x=monthly_avg['Month'], y=monthly_avg[target_metric], mode='lines+markers+text', text=[f"{v:.1f}" for v in monthly_avg[target_metric]], textposition="top center", line=dict(color='orange', width=4), marker=dict(size=10)))
+                    fig_trend.update_layout(height=400, xaxis_title="月", yaxis_title=target_metric, margin=dict(l=20, r=20, t=20, b=20))
+                    st.plotly_chart(fig_trend, use_container_width=True)
+
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
@@ -323,11 +322,9 @@ else:
             sorted_comp_metrics = []
             for key in ORDER_KEYWORDS:
                 for col in raw_cols_c:
-                    if key in col and col not in sorted_comp_metrics:
-                        sorted_comp_metrics.append(col)
+                    if key in col and col not in sorted_comp_metrics: sorted_comp_metrics.append(col)
             for col in raw_cols_c:
-                if col not in sorted_comp_metrics:
-                    sorted_comp_metrics.append(col)
+                if col not in sorted_comp_metrics: sorted_comp_metrics.append(col)
 
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", sorted_comp_metrics, key="m_tab2")
