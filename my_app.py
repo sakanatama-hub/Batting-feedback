@@ -23,20 +23,21 @@ SZ_Y_TH1, SZ_Y_TH2 = 66.6, 88.3
 PLAYER_HANDS = {"#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", "#99 尾瀬 雄大": "左"}
 PLAYERS = list(PLAYER_HANDS.keys())
 
-# --- 指標の表示順序定義 ---
-TARGET_METRICS_ORDER = [
-    "バットスピード (km/h)",
-    "スイング時間 (秒)",
-    "アッパースイング度 (°)",
-    "打球速度 (km/h)",
-    "打球角度 (°)",
-    "打球方向 (°)",
-    "体とバットの角度(インパクト) (°)",
-    "体の回転によるバットの加速の大きさ (G)",
-    "パワー (kW)",
-    "手の最大スピード (m/s)",
-    "バット角度 (°)",
-    "飛距離 (m)"
+# --- 指標の表示順序キーワード定義 ---
+# このキーワードが含まれる列名を、この順番で探して表示します
+SEARCH_KEYWORDS = [
+    "バットスピード",
+    "スイング時間",
+    "アッパースイング度",
+    "打球速度",
+    "打球角度",
+    "打球方向",
+    "体とバットの角度",
+    "加速の大きさ",
+    "パワー",
+    "手の最大スピード",
+    "バット角度",
+    "飛距離"
 ]
 
 # --- GitHub連携関数 ---
@@ -118,7 +119,7 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
         elif val <= 4.5: return "rgba(255, 182, 193, 0.9)", "black"
         else: return "rgba(255, 0, 0, 0.9)", "white"
 
-    if "体の回転によるバットの加速の大きさ" in metric_name:
+    if "加速の大きさ" in metric_name:
         if val <= 5: return "rgba(0, 0, 255, 0.9)", "white"
         elif val <= 10: return "rgba(173, 216, 230, 0.9)", "black"
         elif val <= 14: return "rgba(255, 255, 255, 0.9)", "black"
@@ -168,9 +169,14 @@ def get_3x3_grid(df, metric):
     df_c = df.copy()
     df_c['StrikeZoneX'] = pd.to_numeric(df_c['StrikeZoneX'], errors='coerce')
     df_c['StrikeZoneY'] = pd.to_numeric(df_c['StrikeZoneY'], errors='coerce')
-    is_hand = "手の最大スピード" in metric and "バットスピード (km/h)" in df_c.columns
+    is_hand = "手の最大スピード" in metric and any("バットスピード" in c for c in df_c.columns)
     df_c[metric] = pd.to_numeric(df_c[metric], errors='coerce')
-    if is_hand: df_c['eff_calc'] = pd.to_numeric(df_c['バットスピード (km/h)'], errors='coerce') / df_c[metric]
+    
+    # 手の最大スピード時の効率計算用
+    bs_col = next((c for c in df_c.columns if "バットスピード" in c), None)
+    if is_hand and bs_col: 
+        df_c['eff_calc'] = pd.to_numeric(df_c[bs_col], errors='coerce') / df_c[metric]
+        
     valid = df_c.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
     for _, row in valid.iterrows():
         c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
@@ -179,7 +185,6 @@ def get_3x3_grid(df, metric):
         if is_hand: eff_grid[r, c] += row['eff_calc']
     return np.where(counts > 0, grid / counts, 0), (np.where(counts > 0, eff_grid / counts, 0) if is_hand else None)
 
-# --- 背番号ソート用関数 ---
 def sort_players_by_number(player_list):
     def extract_num(s):
         match = re.search(r'#(\d+)', s)
@@ -227,8 +232,13 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
-                    # 指標をTARGET_METRICS_ORDERの順かつ含まれているものだけにフィルタリング
-                    sorted_metrics = [m for m in TARGET_METRICS_ORDER if m in pdf.columns]
+                    # 指標をキーワード順に抽出
+                    sorted_metrics = []
+                    for key in SEARCH_KEYWORDS:
+                        for col in pdf.columns:
+                            if key in str(col):
+                                sorted_metrics.append(col)
+                                break
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
                 mask = (pdf[cond_col].isin(sel_conds))
@@ -240,8 +250,9 @@ else:
                 if vdf.empty:
                     st.warning(f"⚠️ 一致するデータがありません。")
                 else:
-                    if "手の最大スピード" in target_metric and "バットスピード (km/h)" in vdf.columns:
-                        vdf[target_metric] = pd.to_numeric(vdf['バットスピード (km/h)'], errors='coerce') / pd.to_numeric(vdf[target_metric], errors='coerce')
+                    bs_col = next((c for c in vdf.columns if "バットスピード" in c), None)
+                    if "手の最大スピード" in target_metric and bs_col:
+                        vdf[target_metric] = pd.to_numeric(vdf[bs_col], errors='coerce') / pd.to_numeric(vdf[target_metric], errors='coerce')
                     else:
                         vdf[target_metric] = pd.to_numeric(vdf[target_metric], errors='coerce')
                     
@@ -291,51 +302,19 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    st.subheader(f"📍 {target_metric}：インパクトポイント")
-                    fig_point = go.Figure()
-                    fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
-                    fig_point.add_shape(type="path", path="M -30 15 L 30 15 L 30 8 L 0 0 L -30 8 Z", fillcolor="white", line=dict(color="#444", width=2))
-                    bx = 75 if hand == "左" else -75
-                    fig_point.add_shape(type="rect", x0=bx-15, x1=bx+15, y0=20, y1=160, fillcolor="rgba(200,200,200,0.4)", line_width=0)
-                    fig_point.add_shape(type="circle", x0=bx-10, x1=bx+10, y0=165, y1=195, fillcolor="rgba(200,200,200,0.4)", line_width=0)
-                    fig_point.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, line=dict(color="rgba(255,255,255,0.8)", width=4))
-                    for _, row in vdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric]).iterrows():
-                        plot_x = row['StrikeZoneX']
-                        r_pt = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
-                        dot_color, _ = get_color(row[target_metric], target_metric, row_idx=r_pt)
-                        fig_point.add_trace(go.Scatter(x=[plot_x], y=[row['StrikeZoneY']], mode='markers', marker=dict(size=14, color=dot_color, line=dict(width=1.2, color="white")), showlegend=False))
-                    fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
-                    st.plotly_chart(fig_point, use_container_width=True)
-
-                    st.subheader(f"📈 {target_metric}：月別推移")
-                    pdf_for_graph = pdf.copy()
-                    if "手の最大スピード" in target_metric and "バットスピード (km/h)" in pdf_for_graph.columns:
-                        pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph['バットスピード (km/h)'], errors='coerce') / pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
-                    else:
-                        pdf_for_graph[target_metric] = pd.to_numeric(pdf_for_graph[target_metric], errors='coerce')
-                    pdf_for_graph['Month_Name'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.month.astype(str) + "月"
-                    pdf_for_graph['Month_Sort'] = pd.to_datetime(pdf_for_graph['Date_Only']).dt.strftime('%Y-%m')
-                    graph_df = pdf_for_graph[pdf_for_graph[cond_col].isin(sel_conds)].dropna(subset=[target_metric])
-                    if not graph_df.empty:
-                        monthly_stats = graph_df.groupby(['Month_Sort', 'Month_Name'])[target_metric].agg(['mean', 'max', 'min']).reset_index()
-                        monthly_stats = monthly_stats.sort_values('Month_Sort')
-                        fig_trend = go.Figure()
-                        is_time = "時間" in target_metric
-                        trend_best_label = "月間最速(MIN)" if is_time else "月間最大(MAX)"
-                        trend_best_val = monthly_stats['min'] if is_time else monthly_stats['max']
-                        fig_trend.add_trace(go.Scatter(x=monthly_stats['Month_Name'], y=trend_best_val, name=trend_best_label, line=dict(color='#FF4B4B', width=4), mode='lines+markers'))
-                        fig_trend.add_trace(go.Scatter(x=monthly_stats['Month_Name'], y=monthly_stats['mean'], name="月間平均", line=dict(color='#0068C9', width=3, dash='dot'), mode='lines+markers'))
-                        fig_trend.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20), hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), yaxis=dict(rangemode="tozero"), xaxis=dict(type='category'))
-                        st.plotly_chart(fig_trend, use_container_width=True)
-
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
             existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
             
-            # --- 修正：比較指標の順番をTARGET_METRICS_ORDERに合わせ、含まれているものだけ表示 ---
-            sorted_comp_metrics = [m for m in TARGET_METRICS_ORDER if m in db_df.columns]
+            # 指標をキーワード順に抽出
+            sorted_comp_metrics = []
+            for key in SEARCH_KEYWORDS:
+                for col in db_df.columns:
+                    if key in str(col):
+                        sorted_comp_metrics.append(col)
+                        break
 
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", sorted_comp_metrics, key="m_tab2")
@@ -349,8 +328,9 @@ else:
             fdf = db_df_c[db_df_c[cond_col].isin(sel_conds_c)].copy()
             
             if not fdf.empty and comp_metric:
-                if "手の最大スピード" in comp_metric:
-                    fdf[comp_metric] = pd.to_numeric(fdf['バットスピード (km/h)'], errors='coerce') / pd.to_numeric(fdf[comp_metric], errors='coerce')
+                bs_col = next((c for c in fdf.columns if "バットスピード" in c), None)
+                if "手の最大スピード" in comp_metric and bs_col:
+                    fdf[comp_metric] = pd.to_numeric(fdf[bs_col], errors='coerce') / pd.to_numeric(fdf[comp_metric], errors='coerce')
                 else:
                     fdf[comp_metric] = pd.to_numeric(fdf[comp_metric], errors='coerce')
                 fdf['StrikeZoneY'] = pd.to_numeric(fdf['StrikeZoneY'], errors='coerce')
