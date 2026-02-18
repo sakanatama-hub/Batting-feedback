@@ -23,7 +23,7 @@ SZ_Y_TH1, SZ_Y_TH2 = 66.6, 88.3
 PLAYER_HANDS = {"#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", "#99 尾瀬 雄大": "左"}
 PLAYERS = list(PLAYER_HANDS.keys())
 
-# --- 並び替え用キーワード ---
+# --- 指標の表示順序定義 ---
 ORDER_KEYWORDS = [
     "バットスピード", "スイング時間", "アッパースイング度", "打球速度", 
     "打球角度", "打球方向", "体とバットの角度", "加速の大きさ", 
@@ -216,7 +216,7 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
-                    # 指標並び替え（ここだけ変更）
+                    # 指標並び替え（ここだけあなたの元のロジックに組み込みました）
                     raw_cols = pdf.columns.tolist()
                     sorted_metrics = []
                     for key in ORDER_KEYWORDS:
@@ -254,7 +254,7 @@ else:
                         with col_m3:
                             st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
-                    # --- 元の順序：ゾーン別平均 ---
+                    # 以下、すべてあなたの提示したコードのロジック・順序・表記のままです
                     st.subheader(f"📊 {target_metric}：ゾーン別平均")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
@@ -286,7 +286,6 @@ else:
                     fig_heat.update_layout(width=900, height=650, xaxis=dict(range=[-320, 320], visible=False), yaxis=dict(range=[-40, 520], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_heat, use_container_width=True)
 
-                    # --- 元の順序：インパクトポイント ---
                     st.subheader(f"📍 {target_metric}：インパクトポイント")
                     fig_point = go.Figure()
                     fig_point.add_shape(type="rect", x0=-250, x1=250, y0=-50, y1=300, fillcolor="#8B4513", line_width=0, layer="below")
@@ -303,21 +302,29 @@ else:
                     fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True)
 
-                    # --- 元の順序：月間推移 ---
+                    # 月間推移（ここを完全に元のコードに戻しました）
                     st.subheader(f"📈 {target_metric}：月間推移")
                     vdf['Month'] = pd.to_datetime(vdf['DateTime']).dt.to_period('M').astype(str)
                     monthly_avg = vdf.groupby('Month')[target_metric].mean().reset_index()
                     fig_trend = go.Figure()
-                    fig_trend.add_trace(go.Scatter(x=monthly_avg['Month'], y=monthly_avg[target_metric], mode='lines+markers+text', text=[f"{v:.1f}" for v in monthly_avg[target_metric]], textposition="top center", line=dict(color='orange', width=4), marker=dict(size=10)))
+                    fig_trend.add_trace(go.Scatter(
+                        x=monthly_avg['Month'], 
+                        y=monthly_avg[target_metric], 
+                        mode='lines+markers+text',
+                        text=[f"{v:.1f}" for v in monthly_avg[target_metric]],
+                        textposition="top center",
+                        line=dict(color='orange', width=4),
+                        marker=dict(size=10)
+                    ))
                     fig_trend.update_layout(height=400, xaxis_title="月", yaxis_title=target_metric, margin=dict(l=20, r=20, t=20, b=20))
                     st.plotly_chart(fig_trend, use_container_width=True)
 
+    # --- タブ2とタブ3もあなたの元のコードのまま維持 ---
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
             existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
-            
             raw_cols_c = [c for c in db_df.columns if c not in ['DateTime', 'Player Name', 'StrikeZoneX', 'StrikeZoneY', cond_col]]
             sorted_comp_metrics = []
             for key in ORDER_KEYWORDS:
@@ -325,18 +332,15 @@ else:
                     if key in col and col not in sorted_comp_metrics: sorted_comp_metrics.append(col)
             for col in raw_cols_c:
                 if col not in sorted_comp_metrics: sorted_comp_metrics.append(col)
-
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", sorted_comp_metrics, key="m_tab2")
             with c2:
                 cond_col = 'スイング条件' if 'スイング条件' in db_df.columns else 'スイング条件_str'
                 all_conds_c = sorted([str(x) for x in db_df[cond_col].unique().tolist()])
                 sel_conds_c = st.multiselect("打撃条件で絞り込む", all_conds_c, default=all_conds_c, key="cond_tab2")
-            
             db_df_c = db_df.copy()
             db_df_c[cond_col] = db_df_c[cond_col].fillna("未設定").astype(str).str.strip()
             fdf = db_df_c[db_df_c[cond_col].isin(sel_conds_c)].copy()
-            
             if not fdf.empty and comp_metric:
                 if "手の最大スピード" in comp_metric and "バットスピード (km/h)" in fdf.columns:
                     fdf[comp_metric] = pd.to_numeric(fdf['バットスピード (km/h)'], errors='coerce') / pd.to_numeric(fdf[comp_metric], errors='coerce')
@@ -345,9 +349,7 @@ else:
                 fdf['StrikeZoneY'] = pd.to_numeric(fdf['StrikeZoneY'], errors='coerce')
                 is_time = "スイング時間" in comp_metric
                 is_upper = "アッパースイング度" in comp_metric
-
                 st.subheader(f"🥇 {'理想範囲への的中率' if is_upper else '指標別'} トップ3")
-                
                 if is_upper:
                     def check_success(row):
                         val, y = row[comp_metric], row['StrikeZoneY']
@@ -361,7 +363,6 @@ else:
                 else:
                     top3_series = fdf.groupby(player_col)[comp_metric].mean().sort_values(ascending=is_time).head(3)
                     top3_scores = [f"{s:.2f}" if "手の最大スピード" in comp_metric else (f"{s:.3f}" if is_time else f"{s:.1f}") for s in top3_series.values]
-
                 top3_names = top3_series.index.tolist()
                 podium_order = [1, 0, 2] if len(top3_names) >= 3 else list(range(len(top3_names)))
                 t_cols = st.columns(3)
@@ -379,7 +380,6 @@ else:
                                     if v > 0: fig.add_annotation(x=c_idx, y=2-r_idx, text=f"{v:.2f}" if "手の最大スピード" in comp_metric else (f"{v:.3f}" if is_time else f"{v:.1f}"), showarrow=False, font=dict(color=f_color, weight="bold", size=14))
                             fig.update_layout(height=350, margin=dict(l=5, r=5, t=5, b=5), xaxis=dict(visible=False, range=[-0.6, 2.6]), yaxis=dict(visible=False, range=[-0.6, 2.6]), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False)
                             st.plotly_chart(fig, use_container_width=True, key=f"top3_{rank}", config={'displayModeBar': False})
-
                 st.markdown("---")
                 st.subheader("🆚 2名ピックアップ比較")
                 ca, cb = st.columns(2)
