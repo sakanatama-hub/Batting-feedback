@@ -23,6 +23,22 @@ SZ_Y_TH1, SZ_Y_TH2 = 66.6, 88.3
 PLAYER_HANDS = {"#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", "#99 尾瀬 雄大": "左"}
 PLAYERS = list(PLAYER_HANDS.keys())
 
+# --- 指標の表示順序定義 ---
+TARGET_METRICS_ORDER = [
+    "バットスピード (km/h)",
+    "スイング時間 (秒)",
+    "アッパースイング度 (°)",
+    "打球速度 (km/h)",
+    "打球角度 (°)",
+    "打球方向 (°)",
+    "体とバットの角度(インパクト) (°)",
+    "体の回転によるバットの加速の大きさ (G)",
+    "パワー (kW)",
+    "手の最大スピード (m/s)",
+    "バット角度 (°)",
+    "飛距離 (m)"
+]
+
 # --- GitHub連携関数 ---
 def load_data_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
@@ -211,11 +227,8 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
-                    keywords = ["スコア", "速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "G)", "度"]
-                    valid_metrics = [c for c in pdf.columns if any(k in str(c) for k in keywords)]
-                    valid_metrics = [c for c in valid_metrics if pd.to_numeric(pdf[c], errors='coerce').dropna().any()]
-                    priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
-                    sorted_metrics = [m for m in priority if m in valid_metrics] + [m for m in valid_metrics if m not in priority]
+                    # 指標をTARGET_METRICS_ORDERの順かつ含まれているものだけにフィルタリング
+                    sorted_metrics = [m for m in TARGET_METRICS_ORDER if m in pdf.columns]
                     target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
 
                 mask = (pdf[cond_col].isin(sel_conds))
@@ -321,13 +334,8 @@ else:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
             existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
             
-            # --- 修正：比較指標の順番をタブ1と統一 ---
-            keywords = ["スコア", "速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "G)", "度"]
-            all_metrics_c = [c for c in db_df.columns if any(k in str(c) for k in keywords)]
-            all_metrics_c = [c for c in all_metrics_c if pd.to_numeric(db_df[c], errors='coerce').dropna().any()]
-            
-            priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
-            sorted_comp_metrics = [m for m in priority if m in all_metrics_c] + [m for m in all_metrics_c if m not in priority]
+            # --- 修正：比較指標の順番をTARGET_METRICS_ORDERに合わせ、含まれているものだけ表示 ---
+            sorted_comp_metrics = [m for m in TARGET_METRICS_ORDER if m in db_df.columns]
 
             c1, c2 = st.columns(2)
             with c1: comp_metric = st.selectbox("比較指標", sorted_comp_metrics, key="m_tab2")
