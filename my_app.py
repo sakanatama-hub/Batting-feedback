@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import datetime
 import requests
 import base64
-import re  # 背番号抽出用に追加
+import re  # 背番号抽出用
 
 # --- 基本設定 ---
 PW = "1189" 
@@ -189,13 +189,11 @@ else:
     with tab1:
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
-            # --- データの参照修正 ---
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
             cond_col = 'スイング条件' if 'スイング条件' in db_df.columns else 'スイング条件_str'
             db_df[cond_col] = db_df[cond_col].fillna("未設定").astype(str).str.strip()
             
             all_possible_conds = sorted(db_df[cond_col].unique().tolist())
-            # --- 修正：背番号順に並び替え ---
             existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
 
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
@@ -204,7 +202,6 @@ else:
             
             pdf = db_df[db_df[player_col] == target_player].copy()
             if not pdf.empty:
-                # 日付処理の修正
                 pdf['Date_Only_Str'] = pdf['DateTime'].astype(str).str.extract(r'(\d{4}-\d{2}-\d{2})')[0]
                 pdf['Date_Only'] = pd.to_datetime(pdf['Date_Only_Str'], errors='coerce').dt.date
                 valid_dates = pdf['Date_Only'].dropna()
@@ -214,7 +211,6 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
-                    # 指標選択の修正
                     keywords = ["スコア", "速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "G)", "度"]
                     valid_metrics = [c for c in pdf.columns if any(k in str(c) for k in keywords)]
                     valid_metrics = [c for c in valid_metrics if pd.to_numeric(pdf[c], errors='coerce').dropna().any()]
@@ -323,15 +319,18 @@ else:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
-            # --- 修正：比較タブの選手リストも背番号順に ---
             existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
             
+            # --- 修正：比較指標の順番をタブ1と統一 ---
             keywords = ["スコア", "速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "G)", "度"]
-            valid_comp_metrics = [c for c in db_df.columns if any(k in str(c) for k in keywords)]
-            valid_comp_metrics = [c for c in valid_comp_metrics if pd.to_numeric(db_df[c], errors='coerce').dropna().any()]
+            all_metrics_c = [c for c in db_df.columns if any(k in str(c) for k in keywords)]
+            all_metrics_c = [c for c in all_metrics_c if pd.to_numeric(db_df[c], errors='coerce').dropna().any()]
+            
+            priority = ["バットスピード (km/h)", "スイング時間 (秒)", "アッパースイング度 (°)"]
+            sorted_comp_metrics = [m for m in priority if m in all_metrics_c] + [m for m in all_metrics_c if m not in priority]
 
             c1, c2 = st.columns(2)
-            with c1: comp_metric = st.selectbox("比較指標", valid_comp_metrics, key="m_tab2")
+            with c1: comp_metric = st.selectbox("比較指標", sorted_comp_metrics, key="m_tab2")
             with c2:
                 cond_col = 'スイング条件' if 'スイング条件' in db_df.columns else 'スイング条件_str'
                 all_conds_c = sorted([str(x) for x in db_df[cond_col].unique().tolist()])
@@ -413,7 +412,6 @@ else:
     with tab3:
         st.title("📝 データ登録")
         c1, c2 = st.columns(2)
-        # --- 登録タブも背番号順に ---
         reg_players_sorted = sort_players_by_number(PLAYERS)
         with c1: reg_player = st.selectbox("登録する選手を選択", reg_players_sorted, key="reg_p_tab3")
         with c2: reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_tab3")
