@@ -23,13 +23,6 @@ SZ_Y_TH1, SZ_Y_TH2 = 66.6, 88.3
 PLAYER_HANDS = {"#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", "#99 尾瀬 雄大": "左"}
 PLAYERS = list(PLAYER_HANDS.keys())
 
-# --- 指標の表示順序定義 ---
-ORDER_KEYWORDS = [
-    "バットスピード", "スイング時間", "アッパースイング度", "打球速度", 
-    "打球角度", "打球方向", "体とバットの角度", "加速の大きさ", 
-    "パワー", "手の最大スピード", "バット角度", "飛距離"
-]
-
 # --- GitHub連携関数 ---
 def load_data_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
@@ -216,16 +209,10 @@ else:
                 with c2: date_range = st.date_input("分析期間", value=(min_date, max_date), key="range_tab1")
                 with c3: sel_conds = st.multiselect("打撃条件 (U列)", all_possible_conds, default=all_possible_conds, key="cond_tab1")
                 with c4:
-                    # 指標並び替え（ここだけあなたの元のロジックに組み込みました）
                     raw_cols = pdf.columns.tolist()
-                    sorted_metrics = []
-                    for key in ORDER_KEYWORDS:
-                        for col in raw_cols:
-                            if key in col and col not in sorted_metrics: sorted_metrics.append(col)
-                    for col in raw_cols:
-                        if col not in sorted_metrics and col not in ['DateTime', 'Player Name', 'StrikeZoneX', 'StrikeZoneY', 'Date_Only', 'Date_Only_Str', cond_col]:
-                            sorted_metrics.append(col)
-                    target_metric = st.selectbox("分析指標", sorted_metrics, key="m_tab1")
+                    exclude = ['DateTime', 'Player Name', 'StrikeZoneX', 'StrikeZoneY', 'Date_Only', 'Date_Only_Str', cond_col]
+                    metrics = [c for c in raw_cols if c not in exclude]
+                    target_metric = st.selectbox("分析指標", metrics, key="m_tab1")
 
                 mask = (pdf[cond_col].isin(sel_conds))
                 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
@@ -254,7 +241,6 @@ else:
                         with col_m3:
                             st.info(f"💡 {len(vdf)}件のスイングを分析中")
 
-                    # 以下、すべてあなたの提示したコードのロジック・順序・表記のままです
                     st.subheader(f"📊 {target_metric}：ゾーン別平均")
                     vdf['StrikeZoneX'] = pd.to_numeric(vdf['StrikeZoneX'], errors='coerce')
                     vdf['StrikeZoneY'] = pd.to_numeric(vdf['StrikeZoneY'], errors='coerce')
@@ -302,38 +288,22 @@ else:
                     fig_point.update_layout(height=750, xaxis=dict(range=[-130, 130], visible=False), yaxis=dict(range=[-20, 230], visible=False), margin=dict(l=0, r=0, t=10, b=0))
                     st.plotly_chart(fig_point, use_container_width=True)
 
-                    # 月間推移（ここを完全に元のコードに戻しました）
                     st.subheader(f"📈 {target_metric}：月間推移")
                     vdf['Month'] = pd.to_datetime(vdf['DateTime']).dt.to_period('M').astype(str)
                     monthly_avg = vdf.groupby('Month')[target_metric].mean().reset_index()
                     fig_trend = go.Figure()
-                    fig_trend.add_trace(go.Scatter(
-                        x=monthly_avg['Month'], 
-                        y=monthly_avg[target_metric], 
-                        mode='lines+markers+text',
-                        text=[f"{v:.1f}" for v in monthly_avg[target_metric]],
-                        textposition="top center",
-                        line=dict(color='orange', width=4),
-                        marker=dict(size=10)
-                    ))
+                    fig_trend.add_trace(go.Scatter(x=monthly_avg['Month'], y=monthly_avg[target_metric], mode='lines+markers+text', text=[f"{v:.1f}" for v in monthly_avg[target_metric]], textposition="top center", line=dict(color='orange', width=4), marker=dict(size=10)))
                     fig_trend.update_layout(height=400, xaxis_title="月", yaxis_title=target_metric, margin=dict(l=20, r=20, t=20, b=20))
                     st.plotly_chart(fig_trend, use_container_width=True)
 
-    # --- タブ2とタブ3もあなたの元のコードのまま維持 ---
     with tab2:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
             existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
             raw_cols_c = [c for c in db_df.columns if c not in ['DateTime', 'Player Name', 'StrikeZoneX', 'StrikeZoneY', cond_col]]
-            sorted_comp_metrics = []
-            for key in ORDER_KEYWORDS:
-                for col in raw_cols_c:
-                    if key in col and col not in sorted_comp_metrics: sorted_comp_metrics.append(col)
-            for col in raw_cols_c:
-                if col not in sorted_comp_metrics: sorted_comp_metrics.append(col)
             c1, c2 = st.columns(2)
-            with c1: comp_metric = st.selectbox("比較指標", sorted_comp_metrics, key="m_tab2")
+            with c1: comp_metric = st.selectbox("比較指標", raw_cols_c, key="m_tab2")
             with c2:
                 cond_col = 'スイング条件' if 'スイング条件' in db_df.columns else 'スイング条件_str'
                 all_conds_c = sorted([str(x) for x in db_df[cond_col].unique().tolist()])
