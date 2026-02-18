@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import datetime
 import requests
 import base64
+import re  # 背番号抽出用に追加
 
 # --- 基本設定 ---
 PW = "1189" 
@@ -162,6 +163,13 @@ def get_3x3_grid(df, metric):
         if is_hand: eff_grid[r, c] += row['eff_calc']
     return np.where(counts > 0, grid / counts, 0), (np.where(counts > 0, eff_grid / counts, 0) if is_hand else None)
 
+# --- 背番号ソート用関数 ---
+def sort_players_by_number(player_list):
+    def extract_num(s):
+        match = re.search(r'#(\d+)', s)
+        return int(match.group(1)) if match else 999
+    return sorted(player_list, key=extract_num)
+
 # --- アプリケーション本体 ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
 if "ok" not in st.session_state: 
@@ -187,7 +195,8 @@ else:
             db_df[cond_col] = db_df[cond_col].fillna("未設定").astype(str).str.strip()
             
             all_possible_conds = sorted(db_df[cond_col].unique().tolist())
-            existing_players = sorted(db_df[player_col].dropna().unique().tolist())
+            # --- 修正：背番号順に並び替え ---
+            existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
 
             c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
             with c1: 
@@ -314,7 +323,9 @@ else:
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
-            existing_players = sorted(db_df[player_col].dropna().unique().tolist())
+            # --- 修正：比較タブの選手リストも背番号順に ---
+            existing_players = sort_players_by_number(db_df[player_col].dropna().unique().tolist())
+            
             keywords = ["スコア", "速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "G)", "度"]
             valid_comp_metrics = [c for c in db_df.columns if any(k in str(c) for k in keywords)]
             valid_comp_metrics = [c for c in valid_comp_metrics if pd.to_numeric(db_df[c], errors='coerce').dropna().any()]
@@ -402,7 +413,9 @@ else:
     with tab3:
         st.title("📝 データ登録")
         c1, c2 = st.columns(2)
-        with c1: reg_player = st.selectbox("登録する選手を選択", PLAYERS, key="reg_p_tab3")
+        # --- 登録タブも背番号順に ---
+        reg_players_sorted = sort_players_by_number(PLAYERS)
+        with c1: reg_player = st.selectbox("登録する選手を選択", reg_players_sorted, key="reg_p_tab3")
         with c2: reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_tab3")
         uploaded_file = st.file_uploader("Excelファイルをアップロード (.xlsx)", type=["xlsx"])
         if uploaded_file is not None:
