@@ -409,28 +409,66 @@ else:
                             fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['左','中','右'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
                             st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
-    with tab3:
+   with tab3:
         st.title("📝 データ登録")
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3) # カラムを3つに増やします
         reg_players_sorted = sort_players_by_number(PLAYERS)
-        with c1: reg_player = st.selectbox("登録する選手を選択", reg_players_sorted, key="reg_p_tab3")
-        with c2: reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_tab3")
+        
+        with c1: 
+            reg_player = st.selectbox("登録する選手を選択", reg_players_sorted, key="reg_p_tab3")
+        with c2: 
+            reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_tab3")
+        with c3: 
+            # 試合区別の選択肢を追加
+            game_category = st.selectbox(
+                "データ種別（試合区別）", 
+                ["練習", "オープン戦", "紅白戦", "JAVA大会", "二大大会", "二大大会予選", "その他"], 
+                key="reg_cat_tab3"
+            )
+
         uploaded_file = st.file_uploader("Excelファイルをアップロード (.xlsx)", type=["xlsx"])
+        
         if uploaded_file is not None:
             try:
                 input_df = pd.read_excel(uploaded_file)
                 time_col_name = input_df.columns[0]
-                cmap = {time_col_name: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
+                
+                # 既存のマッピング
+                cmap = {
+                    time_col_name: 'time_col', 
+                    'ExitVelocity': '打球速度', 
+                    'PitchBallVelocity': '投球速度', 
+                    'LaunchAngle': '打球角度', 
+                    'ExitDirection': '打球方向', 
+                    'Spin': '回転数', 
+                    'Distance': '飛距離', 
+                    'SpinDirection': '回転方向'
+                }
                 input_df = input_df.rename(columns=cmap)
-                if 'スイング条件' not in input_df.columns: input_df['スイング条件'] = "未設定"
+                
+                # --- 新規：選択した情報をデータフレームに追加 ---
+                if 'スイング条件' not in input_df.columns: 
+                    input_df['スイング条件'] = "未設定"
+                
+                # 「試合区別」カラムを追加（既存のCSV構造を維持しつつ列を増やす）
+                input_df['試合区別'] = game_category 
+                
                 if st.button("GitHubへ追加保存"):
                     with st.spinner('保存中...'):
                         date_str = reg_date.strftime('%Y-%m-%d')
+                        # DateTime列の作成
                         input_df['DateTime'] = date_str + ' ' + input_df['time_col'].astype(str).str.strip()
                         input_df['Player Name'] = reg_player
+                        
                         latest_db = load_data_from_github()
                         updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
+                        
                         success, message = save_to_github(updated_db)
-                        if success: st.success(f"✅ 保存しました！"); st.balloons()
-                        else: st.error(f"❌ 保存失敗: {message}")
-            except Exception as e: st.error(f"❌ エラー: {e}")
+                        if success: 
+                            st.success(f"✅ [{game_category}] データとして保存しました！")
+                            st.balloons()
+                        else: 
+                            st.error(f"❌ 保存失敗: {message}")
+                            
+            except Exception as e: 
+                st.error(f"❌ エラー: {e}")
