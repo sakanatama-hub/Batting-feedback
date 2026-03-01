@@ -23,6 +23,30 @@ SZ_Y_TH1, SZ_Y_TH2 = 66.6, 88.3
 PLAYER_HANDS = {"#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", "#99 尾瀬 雄大": "左"}
 PLAYERS = list(PLAYER_HANDS.keys())
 
+# --- 追加：コース文字列を座標に変換する関数 ---
+def convert_course_to_coord(course_str):
+    if pd.isna(course_str):
+        return None, None
+    course_str = str(course_str)
+    
+    # 横位置(X)の判定
+    x = 0
+    if "内" in course_str:
+        x = -19.2  # SZ_X_TH1より外側（インコース）
+    elif "外" in course_str:
+        x = 19.2   # SZ_X_TH2より外側（アウトコース）
+    else:
+        x = 0      # 真ん中
+        
+    # 高さ(Y)の判定
+    y = 77.5   # 真ん中の高さ（デフォルト）
+    if "高め" in course_str:
+        y = 99.1  # SZ_Y_TH2より上
+    elif "低め" in course_str:
+        y = 55.8  # SZ_Y_TH1より下
+        
+    return x, y
+
 # --- GitHub連携関数 ---
 def load_data_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
@@ -187,6 +211,7 @@ else:
     tab1, tab2, tab3, tab4 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録", "🏟️ 試合分析"])
 
     with tab1:
+        # (tab1のコードは変更なしのため省略またはそのまま維持)
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
@@ -316,6 +341,7 @@ else:
                         st.plotly_chart(fig_trend, use_container_width=True)
 
     with tab2:
+        # (tab2のコードは変更なしのため省略またはそのまま維持)
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
@@ -410,38 +436,27 @@ else:
 
     with tab3:
         st.title("📝 データ登録")
-        
-        # 登録タイプを選択するサブタブ
         sub_tab_practice, sub_tab_game = st.tabs(["🏋️ 練習データ登録", "🏟️ 試合データ登録"])
-        
         reg_players_sorted = sort_players_by_number(PLAYERS)
         
         with sub_tab_practice:
             c1, c2 = st.columns(2)
-            with c1: 
-                p_reg_player = st.selectbox("登録する選手を選択", reg_players_sorted, key="reg_p_practice")
-            with c2: 
-                p_reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_practice")
-            
+            with c1: p_reg_player = st.selectbox("登録する選手を選択", reg_players_sorted, key="reg_p_practice")
+            with c2: p_reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_practice")
             p_uploaded_file = st.file_uploader("練習のExcelファイルをアップロード (.xlsx)", type=["xlsx"], key="file_practice")
             if p_uploaded_file is not None:
                 try:
                     input_df = pd.read_excel(p_uploaded_file)
-                    # 練習データとして「試合区別」を固定
                     input_df['試合区別'] = "練習"
-                    
                     if st.button("練習データをGitHubへ保存"):
                         with st.spinner('保存中...'):
-                            # カラムマッピング
                             time_col_name = input_df.columns[0]
                             cmap = {time_col_name: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
                             input_df = input_df.rename(columns=cmap)
-                            
                             date_str = p_reg_date.strftime('%Y-%m-%d')
                             input_df['DateTime'] = date_str + ' ' + input_df['time_col'].astype(str).str.strip()
                             input_df['Player Name'] = p_reg_player
                             if 'スイング条件' not in input_df.columns: input_df['スイング条件'] = "未設定"
-                            
                             latest_db = load_data_from_github()
                             updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
                             success, message = save_to_github(updated_db)
@@ -451,30 +466,30 @@ else:
 
         with sub_tab_game:
             c1, c2, c3 = st.columns(3)
-            with c1: 
-                g_reg_player = st.selectbox("登録する選手を選択", reg_players_sorted, key="reg_p_game")
-            with c2: 
-                g_reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_game")
-            with c3:
-                game_category = st.selectbox("試合区別", ["オープン戦", "紅白戦", "JAVA大会", "二大大会", "二大大会予選", "その他"], key="reg_cat_game")
-            
+            with c1: g_reg_player = st.selectbox("登録する選手を選択", reg_players_sorted, key="reg_p_game")
+            with c2: g_reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_game")
+            with c3: game_category = st.selectbox("試合区別", ["オープン戦", "紅白戦", "JAVA大会", "二大大会", "二大大会予選", "その他"], key="reg_cat_game")
             g_uploaded_file = st.file_uploader("試合のExcelファイルをアップロード (.xlsx)", type=["xlsx"], key="file_game")
             if g_uploaded_file is not None:
                 try:
                     input_df = pd.read_excel(g_uploaded_file)
                     input_df['試合区別'] = game_category
                     
+                    # --- 追加修正：試合データの「コース」列を解析して座標列を作る ---
+                    if 'コース' in input_df.columns:
+                        coords = input_df['コース'].apply(convert_course_to_coord)
+                        input_df['StrikeZoneX'] = [c[0] for c in coords]
+                        input_df['StrikeZoneY'] = [c[1] for c in coords]
+                    
                     if st.button("試合データをGitHubへ保存"):
                         with st.spinner('保存中...'):
                             time_col_name = input_df.columns[0]
                             cmap = {time_col_name: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
                             input_df = input_df.rename(columns=cmap)
-                            
                             date_str = g_reg_date.strftime('%Y-%m-%d')
                             input_df['DateTime'] = date_str + ' ' + input_df['time_col'].astype(str).str.strip()
                             input_df['Player Name'] = g_reg_player
                             if 'スイング条件' not in input_df.columns: input_df['スイング条件'] = "未設定"
-                            
                             latest_db = load_data_from_github()
                             updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
                             success, message = save_to_github(updated_db)
@@ -485,13 +500,11 @@ else:
     with tab4:
         st.title("🏟️ 試合分析")
         if not db_df.empty:
-            # 試合データのみを抽出（「試合区別」が「練習」以外、かつ空でないもの）
             if '試合区別' in db_df.columns:
                 game_df = db_df[db_df['試合区別'] != "練習"].copy()
                 if game_df.empty:
                     st.info("試合データがまだ登録されていません。「データ登録」タブから試合データをアップロードしてください。")
                 else:
-                    # ここに試合分析のメインロジックを追加可能
                     st.write("📈 試合データが見つかりました。分析機能を順次実装します。")
                     st.dataframe(game_df.head())
             else:
