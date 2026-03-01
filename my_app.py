@@ -567,7 +567,7 @@ else:
                 st.warning(f"{target_game_player} の試合データはまだありません。")
         else:
             st.info("試合データ (game_data.csv) が登録されていません。")
-# --- [追加] タブ4: 試合用3x3ヒートマップ表示 ---
+            # --- [追加] タブ4: 試合用3x3ヒートマップ表示 ---
                 st.markdown("---")
                 st.subheader("🎯 試合用コース別ヒートマップ (3x3)")
                 
