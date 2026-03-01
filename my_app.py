@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -411,48 +410,89 @@ else:
 
     with tab3:
         st.title("📝 データ登録")
-        c1, c2, c3 = st.columns(3)
+        
+        # 登録タイプを選択するサブタブ
+        sub_tab_practice, sub_tab_game = st.tabs(["🏋️ 練習データ登録", "🏟️ 試合データ登録"])
+        
         reg_players_sorted = sort_players_by_number(PLAYERS)
-        with c1: 
-            reg_player = st.selectbox("登録する選手を選択", reg_players_sorted, key="reg_p_tab3")
-        with c2: 
-            reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_tab3")
-        with c3:
-            # 試合区別の選択肢を追加
-            game_category = st.selectbox(
-                "試合区別", 
-                ["オープン戦", "紅白戦", "JAVA大会", "二大大会", "二大大会予選", "その他"], 
-                key="reg_cat_tab3"
-            )
+        
+        with sub_tab_practice:
+            c1, c2 = st.columns(2)
+            with c1: 
+                p_reg_player = st.selectbox("登録する選手を選択", reg_players_sorted, key="reg_p_practice")
+            with c2: 
+                p_reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_practice")
             
-        uploaded_file = st.file_uploader("Excelファイルをアップロード (.xlsx)", type=["xlsx"])
-        if uploaded_file is not None:
-            try:
-                input_df = pd.read_excel(uploaded_file)
-                time_col_name = input_df.columns[0]
-                cmap = {time_col_name: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
-                input_df = input_df.rename(columns=cmap)
-                
-                if 'スイング条件' not in input_df.columns: 
-                    input_df['スイング条件'] = "未設定"
-                
-                # 試合区別カラムをデータに追加
-                input_df['試合区別'] = game_category
-                
-                if st.button("GitHubへ追加保存"):
-                    with st.spinner('保存中...'):
-                        date_str = reg_date.strftime('%Y-%m-%d')
-                        input_df['DateTime'] = date_str + ' ' + input_df['time_col'].astype(str).str.strip()
-                        input_df['Player Name'] = reg_player
-                        latest_db = load_data_from_github()
-                        updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
-                        success, message = save_to_github(updated_db)
-                        if success: 
-                            st.success(f"✅ [{game_category}] 保存しました！")
-                            st.balloons()
-                        else: st.error(f"❌ 保存失敗: {message}")
-            except Exception as e: st.error(f"❌ エラー: {e}")
+            p_uploaded_file = st.file_uploader("練習のExcelファイルをアップロード (.xlsx)", type=["xlsx"], key="file_practice")
+            if p_uploaded_file is not None:
+                try:
+                    input_df = pd.read_excel(p_uploaded_file)
+                    # 練習データとして「試合区別」を固定
+                    input_df['試合区別'] = "練習"
+                    
+                    if st.button("練習データをGitHubへ保存"):
+                        with st.spinner('保存中...'):
+                            # カラムマッピング
+                            time_col_name = input_df.columns[0]
+                            cmap = {time_col_name: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
+                            input_df = input_df.rename(columns=cmap)
+                            
+                            date_str = p_reg_date.strftime('%Y-%m-%d')
+                            input_df['DateTime'] = date_str + ' ' + input_df['time_col'].astype(str).str.strip()
+                            input_df['Player Name'] = p_reg_player
+                            if 'スイング条件' not in input_df.columns: input_df['スイング条件'] = "未設定"
+                            
+                            latest_db = load_data_from_github()
+                            updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
+                            success, message = save_to_github(updated_db)
+                            if success: st.success("✅ 練習データを保存しました！"); st.balloons()
+                            else: st.error(f"❌ 失敗: {message}")
+                except Exception as e: st.error(f"❌ エラー: {e}")
+
+        with sub_tab_game:
+            c1, c2, c3 = st.columns(3)
+            with c1: 
+                g_reg_player = st.selectbox("登録する選手を選択", reg_players_sorted, key="reg_p_game")
+            with c2: 
+                g_reg_date = st.date_input("打撃日を選択", value=datetime.date.today(), key="reg_d_game")
+            with c3:
+                game_category = st.selectbox("試合区別", ["オープン戦", "紅白戦", "JAVA大会", "二大大会", "二大大会予選", "その他"], key="reg_cat_game")
+            
+            g_uploaded_file = st.file_uploader("試合のExcelファイルをアップロード (.xlsx)", type=["xlsx"], key="file_game")
+            if g_uploaded_file is not None:
+                try:
+                    input_df = pd.read_excel(g_uploaded_file)
+                    input_df['試合区別'] = game_category
+                    
+                    if st.button("試合データをGitHubへ保存"):
+                        with st.spinner('保存中...'):
+                            time_col_name = input_df.columns[0]
+                            cmap = {time_col_name: 'time_col', 'ExitVelocity': '打球速度', 'PitchBallVelocity': '投球速度', 'LaunchAngle': '打球角度', 'ExitDirection': '打球方向', 'Spin': '回転数', 'Distance': '飛距離', 'SpinDirection': '回転方向'}
+                            input_df = input_df.rename(columns=cmap)
+                            
+                            date_str = g_reg_date.strftime('%Y-%m-%d')
+                            input_df['DateTime'] = date_str + ' ' + input_df['time_col'].astype(str).str.strip()
+                            input_df['Player Name'] = g_reg_player
+                            if 'スイング条件' not in input_df.columns: input_df['スイング条件'] = "未設定"
+                            
+                            latest_db = load_data_from_github()
+                            updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
+                            success, message = save_to_github(updated_db)
+                            if success: st.success(f"✅ [{game_category}] データを保存しました！"); st.balloons()
+                            else: st.error(f"❌ 失敗: {message}")
+                except Exception as e: st.error(f"❌ エラー: {e}")
 
     with tab4:
         st.title("🏟️ 試合分析")
-        st.info("データ登録時に『試合区別』を選択して保存してください。今後、大会ごとの分析機能をここに追加します。")
+        if not db_df.empty:
+            # 試合データのみを抽出（「試合区別」が「練習」以外、かつ空でないもの）
+            if '試合区別' in db_df.columns:
+                game_df = db_df[db_df['試合区別'] != "練習"].copy()
+                if game_df.empty:
+                    st.info("試合データがまだ登録されていません。「データ登録」タブから試合データをアップロードしてください。")
+                else:
+                    # ここに試合分析のメインロジックを追加可能
+                    st.write("📈 試合データが見つかりました。分析機能を順次実装します。")
+                    st.dataframe(game_df.head())
+            else:
+                st.warning("「試合区別」カラムが存在しません。新しい形式でデータを登録してください。")
