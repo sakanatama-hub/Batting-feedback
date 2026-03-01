@@ -502,11 +502,47 @@ else:
                             else: st.error(f"❌ 失敗: {message}")
                 except Exception as e: st.error(f"❌ エラー: {e}")
 
-    # --- おまけ：タブ4で試合データのみを確認可能に ---
+        # --- タブ4：試合分析のアップデート ---
     with tab4:
-        st.title("🏟️ 試合分析")
+        st.title("🏟️ 試合分析 (選手別)")
         if not db_game.empty:
-            st.write("📊 試合データ一覧")
-            st.dataframe(db_game)
+            # 試合データに含まれる選手のみを抽出
+            game_player_col = 'Player Name' if 'Player Name' in db_game.columns else db_game.columns[-1]
+            game_players = sort_players_by_number(db_game[game_player_col].dropna().unique().tolist())
+            
+            c1, c2 = st.columns([3, 7])
+            with c1:
+                target_game_player = st.selectbox("分析する選手を選択", game_players, key="p_tab4")
+            
+            # 選択した選手のデータのみ抽出
+            gdf = db_game[db_game[game_player_col] == target_game_player].copy()
+            
+            if not gdf.empty:
+                # 簡易サマリーを表示
+                with c2:
+                    st.write(f"### 📊 {target_game_player} の試合スタッツ")
+                    total_at_bats = len(gdf)
+                    st.info(f"通算打席数 (データ登録分): {total_at_bats} 打席")
+
+                # 指標の選択（試合データにあるものから選択）
+                keywords = ["速度", "角度", "飛距離", "結果", "コース"]
+                game_metrics = [c for c in gdf.columns if any(k in str(c) for k in keywords)]
+                
+                # データの詳細表示
+                st.markdown("---")
+                st.write("🔍 **打席詳細データ**")
+                st.dataframe(gdf, use_container_width=True)
+
+                # もし「打球速度」などの数値データがあれば、簡単な平均なども出せます
+                if '打球速度' in gdf.columns:
+                    gdf['打球速度'] = pd.to_numeric(gdf['打球速度'], errors='coerce')
+                    avg_speed = gdf['打球速度'].mean()
+                    max_speed = gdf['打球速度'].max()
+                    col_s1, col_s2 = st.columns(2)
+                    col_s1.metric("試合時 平均打球速度", f"{avg_speed:.1f} km/h")
+                    col_s2.metric("試合時 最大打球速度", f"{max_speed:.1f} km/h")
+
+            else:
+                st.warning("選択した選手のデータが見つかりません。")
         else:
-            st.info("試合データがまだありません。")
+            st.info("試合データ (game_data.csv) がまだ登録されていません。「データ登録」タブからアップロードしてください。")
