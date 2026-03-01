@@ -567,3 +567,70 @@ else:
                 st.warning(f"{target_game_player} の試合データはまだありません。")
         else:
             st.info("試合データ (game_data.csv) が登録されていません。")
+# --- [追加] タブ4: 試合用3x3ヒートマップ表示 ---
+                st.markdown("---")
+                st.subheader("🎯 試合用コース別ヒートマップ (3x3)")
+                
+                # 1. 指標の選択 (試合データにあるもの限定)
+                keywords_h = ["速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "度"]
+                valid_metrics_h = [c for c in final_gdf.columns if any(k in str(c) for k in keywords_h)]
+                valid_metrics_h = [c for c in valid_metrics_h if pd.to_numeric(final_gdf[c], errors='coerce').dropna().any()]
+                
+                if not valid_metrics_h:
+                    st.warning("ヒートマップを表示できる数値データ（速度、角度など）がありません。")
+                else:
+                    target_metric_h = st.selectbox("表示する指標を選択", valid_metrics_h, key="m_tab4_h")
+                    
+                    # 2. データの準備 (数値化 & 座標チェック)
+                    final_gdf[target_metric_h] = pd.to_numeric(final_gdf[target_metric_h], errors='coerce')
+                    vdf_h = final_gdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
+                    
+                    # 手のスピードの場合は効率計算
+                    is_hand_h = "手の最大スピード" in target_metric_h and "バットスピード (km/h)" in vdf_h.columns
+                    if is_hand_h:
+                        vdf_h[target_metric_h] = pd.to_numeric(vdf_h['バットスピード (km/h)'], errors='coerce') / vdf_h[target_metric_h]
+
+                    if vdf_h.empty:
+                        st.warning("選択した指標に対応する座標データ（コース）がありません。")
+                    else:
+                        # 3. 図の描画 (タブ1・2のロジックを踏襲)
+                        # タブ4はプロット領域をスッキリさせるため背景図形は最小限に
+                        fig_heat_g = go.Figure()
+                        
+                        # 外枠 (黒ベース)
+                        fig_heat_g.add_shape(type="rect", x0=-200, x1=200, y0=20, y1=130, fillcolor="#222", line_width=1, layer="below")
+                        
+                        grid_val_g = np.zeros((3, 3)); grid_count_g = np.zeros((3, 3))
+                        
+                        # データ割り振り
+                        for _, row in vdf_h.iterrows():
+                            c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
+                            r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
+                            grid_val_g[r, c] += row[target_metric_h]; grid_count_g[r, c] += 1
+                        
+                        display_grid_g = np.where(grid_count_g > 0, grid_val_g / grid_count_g, 0)
+                        
+                        # グリッド描画
+                        for r in range(3):
+                            for c in range(3):
+                                # 座標定義 (横: 左-150-50, 中-50-50, 右50-150 | 高さ: 高90-130, 中50-90, 低20-50)
+                                x0, x1 = -150 + c*100, -50 + c*100
+                                y0, y1 = 90 - r*35, 125 - r*35 # 少し調整
+                                
+                                v = display_grid_g[r, c]
+                                cnt = int(grid_count_g[r, c])
+                                color, f_color = get_color(v, target_metric_h, row_idx=r)
+                                
+                                # 四角形
+                                fig_heat_g.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#444", width=2))
+                                
+                                if v > 0:
+                                    txt = f"{v:.2f}" if "手の最大スピード" in target_metric_h else (f"{v:.3f}" if "時間" in target_metric_h else f"{v:.1f}")
+                                    # 平均値
+                                    fig_heat_g.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2 + 5, text=txt, showarrow=False, font=dict(size=20, color=f_color, weight="bold"))
+                                    # 打席数
+                                    fig_heat_g.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2 - 10, text=f"{cnt} 打席", showarrow=False, font=dict(size=12, color=f_color))
+                        
+                        fig_heat_g.update_layout(width=500, height=500, xaxis=dict(visible=False, range=[-210, 210]), yaxis=dict(visible=False, range=[10, 140]), plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10,r=10,t=10,b=10))
+                        st.plotly_chart(fig_heat_g, config={'displayModeBar': False})
+                # --- [追加ここまで] ---
