@@ -207,14 +207,22 @@ if not st.session_state["ok"]:
         if val == PW: 
             st.session_state["ok"] = True
             st.rerun()
-        
+            
 else:
-    # --- データの読み込みを分離（タブ1,2には練習のみ、タブ4には試合のみ） ---
+    # 1. データの読み込み（練習と試合を完全に分離）
     db_practice = load_data_from_github(GITHUB_FILE_PATH)      # 練習データ
     db_game = load_data_from_github(GITHUB_GAME_FILE_PATH)     # 試合データ
 
-    # 個人分析・比較分析(タブ1,2)で使うメイン変数を「練習データのみ」にする
-    db_df = db_practice.copy()
+    # 2. タブ1・2（練習分析）で使うメイン変数を「練習データのみ」に設定
+    db_df = db_practice.copy() if not db_practice.empty else pd.DataFrame()
+
+    # 3. タブの定義（ここが抜けているか、順番が違うとエラーになります）
+    tab1, tab2, tab3, tab4 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録", "🏟️ 試合分析"])
+
+    # --- 以下、各タブの中身が続く ---
+    with tab1:
+        st.title("🔵 個人別打撃分析")
+        # (以下、元々のtab1のコード...)
 
     with tab1:
         st.title("🔵 個人別打撃分析")
