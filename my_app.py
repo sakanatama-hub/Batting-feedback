@@ -207,7 +207,8 @@ if not st.session_state["ok"]:
         if val == PW: 
             st.session_state["ok"] = True
             st.rerun()
-    else:
+        
+else:
     # --- データの読み込みを分離（タブ1,2には練習のみ、タブ4には試合のみ） ---
     db_practice = load_data_from_github(GITHUB_FILE_PATH)      # 練習データ
     db_game = load_data_from_github(GITHUB_GAME_FILE_PATH)     # 試合データ
