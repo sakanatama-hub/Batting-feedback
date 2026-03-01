@@ -12,6 +12,7 @@ PW = "1189"
 GITHUB_USER = "sakanatama-hub"
 GITHUB_REPO = "Batting-feedback"
 GITHUB_FILE_PATH = "data.csv"
+GITHUB_GAME_FILE_PATH = "game_data.csv" # 追加：試合用パス
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 
 # --- ストライクゾーン定義 (cm) ---
@@ -47,9 +48,9 @@ def convert_course_to_coord(course_str):
         
     return x, y
 
-# --- GitHub連携関数 ---
-def load_data_from_github():
-    url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{GITHUB_FILE_PATH}?nocache={datetime.datetime.now().timestamp()}"
+# --- GitHub連携関数 (引数にpathを追加) ---
+def load_data_from_github(path):
+    url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{path}?nocache={datetime.datetime.now().timestamp()}"
     try:
         df = pd.read_csv(url, dtype=str)
         df.columns = df.columns.str.strip()
@@ -57,8 +58,8 @@ def load_data_from_github():
     except:
         return pd.DataFrame()
 
-def save_to_github(new_df):
-    url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
+def save_to_github(new_df, path):
+    url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{path}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     res = requests.get(url, headers=headers)
     sha = res.json().get("sha") if res.status_code == 200 else None
@@ -207,11 +208,14 @@ if not st.session_state["ok"]:
             st.session_state["ok"] = True
             st.rerun()
 else:
-    db_df = load_data_from_github()
+    # --- 修正：db_dfを練習と試合の両方読み込んで統合 ---
+    db_practice = load_data_from_github(GITHUB_FILE_PATH)
+    db_game = load_data_from_github(GITHUB_GAME_FILE_PATH)
+    db_df = pd.concat([db_practice, db_game], ignore_index=True) if not db_practice.empty or not db_game.empty else pd.DataFrame()
+
     tab1, tab2, tab3, tab4 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録", "🏟️ 試合分析"])
 
     with tab1:
-        # (tab1のコードは変更なしのため省略またはそのまま維持)
         st.title("🔵 個人別打撃分析")
         if not db_df.empty:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
@@ -341,7 +345,6 @@ else:
                         st.plotly_chart(fig_trend, use_container_width=True)
 
     with tab2:
-        # (tab2のコードは変更なしのため省略またはそのまま維持)
         st.title("⚔️ 選手間比較分析")
         if not db_df.empty:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
@@ -457,9 +460,10 @@ else:
                             input_df['DateTime'] = date_str + ' ' + input_df['time_col'].astype(str).str.strip()
                             input_df['Player Name'] = p_reg_player
                             if 'スイング条件' not in input_df.columns: input_df['スイング条件'] = "未設定"
-                            latest_db = load_data_from_github()
+                            # --- 修正：練習用パスへ保存 ---
+                            latest_db = load_data_from_github(GITHUB_FILE_PATH)
                             updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
-                            success, message = save_to_github(updated_db)
+                            success, message = save_to_github(updated_db, GITHUB_FILE_PATH)
                             if success: st.success("✅ 練習データを保存しました！"); st.balloons()
                             else: st.error(f"❌ 失敗: {message}")
                 except Exception as e: st.error(f"❌ エラー: {e}")
@@ -490,22 +494,19 @@ else:
                             input_df['DateTime'] = date_str + ' ' + input_df['time_col'].astype(str).str.strip()
                             input_df['Player Name'] = g_reg_player
                             if 'スイング条件' not in input_df.columns: input_df['スイング条件'] = "未設定"
-                            latest_db = load_data_from_github()
+                            # --- 修正：試合用パスへ保存 ---
+                            latest_db = load_data_from_github(GITHUB_GAME_FILE_PATH)
                             updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
-                            success, message = save_to_github(updated_db)
+                            success, message = save_to_github(updated_db, GITHUB_GAME_FILE_PATH)
                             if success: st.success(f"✅ [{game_category}] データを保存しました！"); st.balloons()
                             else: st.error(f"❌ 失敗: {message}")
                 except Exception as e: st.error(f"❌ エラー: {e}")
 
+    # --- おまけ：タブ4で試合データのみを確認可能に ---
     with tab4:
         st.title("🏟️ 試合分析")
-        if not db_df.empty:
-            if '試合区別' in db_df.columns:
-                game_df = db_df[db_df['試合区別'] != "練習"].copy()
-                if game_df.empty:
-                    st.info("試合データがまだ登録されていません。「データ登録」タブから試合データをアップロードしてください。")
-                else:
-                    st.write("📈 試合データが見つかりました。分析機能を順次実装します。")
-                    st.dataframe(game_df.head())
-            else:
-                st.warning("「試合区別」カラムが存在しません。新しい形式でデータを登録してください。")
+        if not db_game.empty:
+            st.write("📊 試合データ一覧")
+            st.dataframe(db_game)
+        else:
+            st.info("試合データがまだありません。")
