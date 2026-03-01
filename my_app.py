@@ -502,47 +502,67 @@ else:
                             else: st.error(f"❌ 失敗: {message}")
                 except Exception as e: st.error(f"❌ エラー: {e}")
 
-        # --- タブ4：試合分析のアップデート ---
+      # --- タブ4：試合分析 (選手別 + 日付別) ---
     with tab4:
-        st.title("🏟️ 試合分析 (選手別)")
+        st.title("🏟️ 試合分析")
         if not db_game.empty:
-            # 試合データに含まれる選手のみを抽出
+            # 1. 選手選択
             game_player_col = 'Player Name' if 'Player Name' in db_game.columns else db_game.columns[-1]
             game_players = sort_players_by_number(db_game[game_player_col].dropna().unique().tolist())
             
-            c1, c2 = st.columns([3, 7])
+            c1, c2, c3 = st.columns([2, 3, 3])
             with c1:
-                target_game_player = st.selectbox("分析する選手を選択", game_players, key="p_tab4")
+                target_game_player = st.selectbox("選手を選択", game_players, key="p_tab4")
             
-            # 選択した選手のデータのみ抽出
+            # 選手で一旦フィルタリング
             gdf = db_game[db_game[game_player_col] == target_game_player].copy()
             
             if not gdf.empty:
-                # 簡易サマリーを表示
-                with c2:
-                    st.write(f"### 📊 {target_game_player} の試合スタッツ")
-                    total_at_bats = len(gdf)
-                    st.info(f"通算打席数 (データ登録分): {total_at_bats} 打席")
-
-                # 指標の選択（試合データにあるものから選択）
-                keywords = ["速度", "角度", "飛距離", "結果", "コース"]
-                game_metrics = [c for c in gdf.columns if any(k in str(c) for k in keywords)]
+                # 2. 日付データの整理
+                # DateTime列から日付部分だけを抽出して'Date'列を作る
+                gdf['Date'] = pd.to_datetime(gdf['DateTime'], errors='coerce').dt.date
+                available_dates = sorted(gdf['Date'].dropna().unique(), reverse=True) # 新しい順
                 
-                # データの詳細表示
-                st.markdown("---")
-                st.write("🔍 **打席詳細データ**")
-                st.dataframe(gdf, use_container_width=True)
+                with c2:
+                    # 日付を複数選択できるようにする (デフォルトは全選択)
+                    selected_dates = st.multiselect(
+                        "表示する日付を選択", 
+                        options=available_dates, 
+                        default=available_dates,
+                        key="d_tab4"
+                    )
+                
+                with c3:
+                    # 試合区別（オープン戦など）でも絞り込めるように
+                    game_cats = sorted(gdf['試合区別'].dropna().unique().tolist())
+                    selected_cats = st.multiselect("試合種別を選択", game_cats, default=game_cats, key="cat_tab4")
 
-                # もし「打球速度」などの数値データがあれば、簡単な平均なども出せます
-                if '打球速度' in gdf.columns:
-                    gdf['打球速度'] = pd.to_numeric(gdf['打球速度'], errors='coerce')
-                    avg_speed = gdf['打球速度'].mean()
-                    max_speed = gdf['打球速度'].max()
-                    col_s1, col_s2 = st.columns(2)
-                    col_s1.metric("試合時 平均打球速度", f"{avg_speed:.1f} km/h")
-                    col_s2.metric("試合時 最大打球速度", f"{max_speed:.1f} km/h")
+                # 3. 最終的なフィルタリング
+                final_gdf = gdf[
+                    (gdf['Date'].isin(selected_dates)) & 
+                    (gdf['試合区別'].isin(selected_cats))
+                ].copy()
 
+                if not final_gdf.empty:
+                    st.markdown("---")
+                    col_m1, col_m2, col_m3 = st.columns(3)
+                    col_m1.metric("選択中の打席数", f"{len(final_gdf)} 打席")
+                    
+                    if '打球速度' in final_gdf.columns:
+                        final_gdf['打球速度'] = pd.to_numeric(final_gdf['打球速度'], errors='coerce')
+                        max_v = final_gdf['打球速度'].max()
+                        col_m2.metric("期間内 最大速度", f"{max_v:.1f} km/h")
+                    
+                    if '飛距離' in final_gdf.columns:
+                        final_gdf['飛距離'] = pd.to_numeric(final_gdf['飛距離'], errors='coerce')
+                        max_d = final_gdf['飛距離'].max()
+                        col_m3.metric("期間内 最大飛距離", f"{max_d:.1f} m")
+
+                    st.write("🔍 **詳細データ一覧**")
+                    st.dataframe(final_gdf.drop(columns=['Date']), use_container_width=True)
+                else:
+                    st.warning("条件に一致するデータがありません。")
             else:
-                st.warning("選択した選手のデータが見つかりません。")
+                st.warning(f"{target_game_player} の試合データはまだありません。")
         else:
-            st.info("試合データ (game_data.csv) がまだ登録されていません。「データ登録」タブからアップロードしてください。")
+            st.info("試合データ (game_data.csv) が登録されていません。")
