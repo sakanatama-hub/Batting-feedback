@@ -502,7 +502,7 @@ else:
                             else: st.error(f"❌ 失敗: {message}")
                 except Exception as e: st.error(f"❌ エラー: {e}")
 
-       # --- タブ4：試合分析 (種別 ➔ 対戦相手で絞り込み) ---
+      # --- タブ4：試合分析 (表示列を限定) ---
     with tab4:
         st.title("🏟️ 試合分析")
         if not db_game.empty:
@@ -527,9 +527,7 @@ else:
                 cat_filtered_df = gdf[gdf['試合区別'] == selected_cat].copy()
                 
                 # 3. 対戦相手の選択 (データの1列目：A列を読み取る)
-                # 1列目の列名を取得
                 opponent_col = cat_filtered_df.columns[0]
-                # その列にある対戦相手の一覧を取得（日付とセットにすると分かりやすいので DateTime も活用）
                 cat_filtered_df['Match_Label'] = cat_filtered_df[opponent_col].astype(str) + " (" + cat_filtered_df['DateTime'].astype(str).str[:10] + ")"
                 available_matches = sorted(cat_filtered_df['Match_Label'].unique().tolist(), reverse=True)
 
@@ -540,24 +538,29 @@ else:
                 final_gdf = cat_filtered_df[cat_filtered_df['Match_Label'] == selected_match].copy()
 
                 if not final_gdf.empty:
-                    st.markdown(f"### ⚡️ {selected_match} のデータ")
+                    st.markdown(f"### ⚡️ {selected_match}")
                     
-                    # スタッツ表示
-                    col_m1, col_m2, col_m3 = st.columns(3)
-                    col_m1.metric("この試合の打席数", f"{len(final_gdf)} 打席")
+                    # 打撃数(len)の表示は削除し、速度と安打数のみ表示
+                    col_m1, col_m2 = st.columns(2)
                     
                     if '打球速度' in final_gdf.columns:
                         final_gdf['打球速度'] = pd.to_numeric(final_gdf['打球速度'], errors='coerce')
                         max_v = final_gdf['打球速度'].max()
-                        col_m2.metric("試合中 最大速度", f"{max_v:.1f} km/h")
+                        col_m1.metric("試合中 最大速度", f"{max_v:.1f} km/h")
                     
                     if '結果' in final_gdf.columns:
                         hits = len(final_gdf[final_gdf['結果'].str.contains('安打|本塁打|二塁打|三塁打', na=False)])
-                        col_m3.metric("この試合の安打数", f"{hits}")
+                        col_m2.metric("この試合の安打数", f"{hits}")
 
                     st.write("🔍 **詳細データ**")
-                    # 表示用に作った Match_Label は除いて表示
-                    st.dataframe(final_gdf.drop(columns=['Match_Label']), use_container_width=True)
+                    
+                    # --- 列の絞り込み ---
+                    # 2,3,4,5,6列目(index 1,2,3,4,5) と 10列目以降(index 9以降)
+                    # 最後に内部処理用の Match_Label が入っているので、それ以外を表示
+                    cols_to_show = list(range(1, 6)) + list(range(9, len(final_gdf.columns) - 1))
+                    display_df = final_gdf.iloc[:, cols_to_show]
+                    
+                    st.dataframe(display_df, use_container_width=True)
                 else:
                     st.warning("条件に一致するデータがありません。")
             else:
