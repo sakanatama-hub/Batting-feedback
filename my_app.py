@@ -502,7 +502,7 @@ else:
                             else: st.error(f"❌ 失敗: {message}")
                 except Exception as e: st.error(f"❌ エラー: {e}")
 
-      # --- タブ4：試合分析 (選手別 + 日付別) ---
+       # --- タブ4：試合分析 (種別 ➔ 対戦相手で絞り込み) ---
     with tab4:
         st.title("🏟️ 試合分析")
         if not db_game.empty:
@@ -512,54 +512,52 @@ else:
             
             c1, c2, c3 = st.columns([2, 3, 3])
             with c1:
-                target_game_player = st.selectbox("選手を選択", game_players, key="p_tab4")
+                target_game_player = st.selectbox("分析する選手を選択", game_players, key="p_tab4")
             
             # 選手で一旦フィルタリング
             gdf = db_game[db_game[game_player_col] == target_game_player].copy()
             
             if not gdf.empty:
-                # 2. 日付データの整理
-                # DateTime列から日付部分だけを抽出して'Date'列を作る
-                gdf['Date'] = pd.to_datetime(gdf['DateTime'], errors='coerce').dt.date
-                available_dates = sorted(gdf['Date'].dropna().unique(), reverse=True) # 新しい順
-                
+                # 2. 試合種別の選択
+                game_cats = sorted(gdf['試合区別'].dropna().unique().tolist())
                 with c2:
-                    # 日付を複数選択できるようにする (デフォルトは全選択)
-                    selected_dates = st.multiselect(
-                        "表示する日付を選択", 
-                        options=available_dates, 
-                        default=available_dates,
-                        key="d_tab4"
-                    )
+                    selected_cat = st.selectbox("試合種別を選択", game_cats, key="cat_tab4")
                 
-                with c3:
-                    # 試合区別（オープン戦など）でも絞り込めるように
-                    game_cats = sorted(gdf['試合区別'].dropna().unique().tolist())
-                    selected_cats = st.multiselect("試合種別を選択", game_cats, default=game_cats, key="cat_tab4")
+                # 種別でさらにフィルタリング
+                cat_filtered_df = gdf[gdf['試合区別'] == selected_cat].copy()
+                
+                # 3. 対戦相手の選択 (データの1列目：A列を読み取る)
+                # 1列目の列名を取得
+                opponent_col = cat_filtered_df.columns[0]
+                # その列にある対戦相手の一覧を取得（日付とセットにすると分かりやすいので DateTime も活用）
+                cat_filtered_df['Match_Label'] = cat_filtered_df[opponent_col].astype(str) + " (" + cat_filtered_df['DateTime'].astype(str).str[:10] + ")"
+                available_matches = sorted(cat_filtered_df['Match_Label'].unique().tolist(), reverse=True)
 
-                # 3. 最終的なフィルタリング
-                final_gdf = gdf[
-                    (gdf['Date'].isin(selected_dates)) & 
-                    (gdf['試合区別'].isin(selected_cats))
-                ].copy()
+                with c3:
+                    selected_match = st.selectbox("試合（対戦相手）を選択", available_matches, key="match_tab4")
+
+                # 4. 最終的な試合データの抽出
+                final_gdf = cat_filtered_df[cat_filtered_df['Match_Label'] == selected_match].copy()
 
                 if not final_gdf.empty:
-                    st.markdown("---")
+                    st.markdown(f"### ⚡️ {selected_match} のデータ")
+                    
+                    # スタッツ表示
                     col_m1, col_m2, col_m3 = st.columns(3)
-                    col_m1.metric("選択中の打席数", f"{len(final_gdf)} 打席")
+                    col_m1.metric("この試合の打席数", f"{len(final_gdf)} 打席")
                     
                     if '打球速度' in final_gdf.columns:
                         final_gdf['打球速度'] = pd.to_numeric(final_gdf['打球速度'], errors='coerce')
                         max_v = final_gdf['打球速度'].max()
-                        col_m2.metric("期間内 最大速度", f"{max_v:.1f} km/h")
+                        col_m2.metric("試合中 最大速度", f"{max_v:.1f} km/h")
                     
-                    if '飛距離' in final_gdf.columns:
-                        final_gdf['飛距離'] = pd.to_numeric(final_gdf['飛距離'], errors='coerce')
-                        max_d = final_gdf['飛距離'].max()
-                        col_m3.metric("期間内 最大飛距離", f"{max_d:.1f} m")
+                    if '結果' in final_gdf.columns:
+                        hits = len(final_gdf[final_gdf['結果'].str.contains('安打|本塁打|二塁打|三塁打', na=False)])
+                        col_m3.metric("この試合の安打数", f"{hits}")
 
-                    st.write("🔍 **詳細データ一覧**")
-                    st.dataframe(final_gdf.drop(columns=['Date']), use_container_width=True)
+                    st.write("🔍 **詳細データ**")
+                    # 表示用に作った Match_Label は除いて表示
+                    st.dataframe(final_gdf.drop(columns=['Match_Label']), use_container_width=True)
                 else:
                     st.warning("条件に一致するデータがありません。")
             else:
