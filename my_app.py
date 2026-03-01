@@ -502,7 +502,7 @@ else:
                             else: st.error(f"❌ 失敗: {message}")
                 except Exception as e: st.error(f"❌ エラー: {e}")
 
-       # --- タブ4：試合分析 (表示列限定 + 3x3ヒートマップ) ---
+       # --- タブ4：試合分析 (表示列限定 + 3x3ヒートマップ + 型変換修正) ---
     with tab4:
         st.title("🏟️ 試合分析")
         if not db_game.empty:
@@ -568,27 +568,37 @@ else:
                     
                     if valid_metrics_h:
                         target_metric_h = st.selectbox("表示する指標を選択", valid_metrics_h, key="m_tab4_h")
+                        
+                        # 数値型へ強制変換（エラー回避の肝）
                         final_gdf[target_metric_h] = pd.to_numeric(final_gdf[target_metric_h], errors='coerce')
+                        final_gdf['StrikeZoneX'] = pd.to_numeric(final_gdf['StrikeZoneX'], errors='coerce')
+                        final_gdf['StrikeZoneY'] = pd.to_numeric(final_gdf['StrikeZoneY'], errors='coerce')
+                        
                         vdf_h = final_gdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
                         
                         if not vdf_h.empty:
                             fig_heat_g = go.Figure()
+                            # 背景
                             fig_heat_g.add_shape(type="rect", x0=-200, x1=200, y0=20, y1=130, fillcolor="#222", line_width=1, layer="below")
                             
                             grid_val_g = np.zeros((3, 3)); grid_count_g = np.zeros((3, 3))
                             for _, row in vdf_h.iterrows():
+                                # 数値比較
                                 c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
                                 r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
                                 grid_val_g[r, c] += row[target_metric_h]; grid_count_g[r, c] += 1
                             
                             display_grid_g = np.where(grid_count_g > 0, grid_val_g / grid_count_g, 0)
                             
-                            for r in range(3):
-                                for c in range(3):
-                                    x0, x1 = -150 + c*100, -50 + c*100
-                                    y0, y1 = 90 - r*35, 125 - r*35
-                                    v = display_grid_g[r, c]; cnt = int(grid_count_g[r, c])
-                                    color, f_color = get_color(v, target_metric_h, row_idx=r)
+                            for r_idx in range(3):
+                                for c_idx in range(3):
+                                    x0, x1 = -150 + c_idx*100, -50 + c_idx*100
+                                    y0, y1 = 90 - r_idx*35, 125 - r_idx*35
+                                    v = display_grid_g[r_idx, c_idx]; cnt = int(grid_count_g[r_idx, c_idx])
+                                    
+                                    # 色の取得
+                                    color, f_color = get_color(v, target_metric_h, row_idx=r_idx)
+                                    
                                     fig_heat_g.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#444", width=2))
                                     if v > 0:
                                         txt = f"{v:.2f}" if "手の最大スピード" in target_metric_h else (f"{v:.3f}" if "時間" in target_metric_h else f"{v:.1f}")
@@ -598,7 +608,7 @@ else:
                             fig_heat_g.update_layout(width=500, height=500, xaxis=dict(visible=False, range=[-210, 210]), yaxis=dict(visible=False, range=[10, 140]), plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10,r=10,t=10,b=10))
                             st.plotly_chart(fig_heat_g, config={'displayModeBar': False})
                         else:
-                            st.warning("選択した指標の座標データがありません。")
+                            st.warning("選択した試合のデータには有効なコース（座標）データがありません。")
                 else:
                     st.warning("条件に一致するデータがありません。")
             else:
