@@ -409,9 +409,9 @@ else:
                             fig_pair.update_layout(height=400, margin=dict(t=30), xaxis=dict(tickvals=[0,1,2], ticktext=['左','中','右'], side="top"), yaxis=dict(tickvals=[0,1,2], ticktext=['高','中','低']))
                             st.plotly_chart(fig_pair, use_container_width=True, key=f"pair_{idx}")
 
-   with tab3:
+  with tab3:
         st.title("📝 データ登録")
-        c1, c2, c3 = st.columns(3) # カラムを3つに増やします
+        c1, c2, c3 = st.columns(3)
         reg_players_sorted = sort_players_by_number(PLAYERS)
         
         with c1: 
@@ -421,8 +421,8 @@ else:
         with c3: 
             # 試合区別の選択肢を追加
             game_category = st.selectbox(
-                "データ種別（試合区別）", 
-                ["練習", "オープン戦", "紅白戦", "JAVA大会", "二大大会", "二大大会予選", "その他"], 
+                "試合区別", 
+                ["オープン戦", "紅白戦", "JAVA大会", "二大大会", "二大大会予選", "その他"], 
                 key="reg_cat_tab3"
             )
 
@@ -433,7 +433,7 @@ else:
                 input_df = pd.read_excel(uploaded_file)
                 time_col_name = input_df.columns[0]
                 
-                # 既存のマッピング
+                # マッピング設定
                 cmap = {
                     time_col_name: 'time_col', 
                     'ExitVelocity': '打球速度', 
@@ -446,21 +446,22 @@ else:
                 }
                 input_df = input_df.rename(columns=cmap)
                 
-                # --- 新規：選択した情報をデータフレームに追加 ---
+                # スイング条件の初期化
                 if 'スイング条件' not in input_df.columns: 
                     input_df['スイング条件'] = "未設定"
                 
-                # 「試合区別」カラムを追加（既存のCSV構造を維持しつつ列を増やす）
+                # 選択した試合区別を全行に付与
                 input_df['試合区別'] = game_category 
                 
                 if st.button("GitHubへ追加保存"):
                     with st.spinner('保存中...'):
                         date_str = reg_date.strftime('%Y-%m-%d')
-                        # DateTime列の作成
+                        # DateTime列の作成（日付 + 時間）
                         input_df['DateTime'] = date_str + ' ' + input_df['time_col'].astype(str).str.strip()
                         input_df['Player Name'] = reg_player
                         
                         latest_db = load_data_from_github()
+                        # 既存データと結合
                         updated_db = pd.concat([latest_db, input_df], ignore_index=True) if not latest_db.empty else input_df
                         
                         success, message = save_to_github(updated_db)
@@ -471,4 +472,4 @@ else:
                             st.error(f"❌ 保存失敗: {message}")
                             
             except Exception as e: 
-                st.error(f"❌ エラー: {e}")
+                st.error(f"❌ エラーが発生しました: {e}")
