@@ -564,14 +564,13 @@ else:
                     final_gdf['StrikeZoneY'] = pd.to_numeric(final_gdf['StrikeZoneY'], errors='coerce')
 
                     # --- ストライク状況別のデータ抽出 (3列目を参照) ---
-                    # 3列目(index=2)を取得。0,1,2が入っている前提
                     strike_col = final_gdf.columns[2]
                     final_gdf[strike_col] = pd.to_numeric(final_gdf[strike_col], errors='coerce')
                     
                     df_early = final_gdf[final_gdf[strike_col] != 2].copy()  # 0,1ストライク
                     df_two = final_gdf[final_gdf[strike_col] == 2].copy()    # 2ストライク
 
-                    # --- A. 指標サマリー (比較表示) ---
+                    # 統計算出用関数
                     def get_stats(target_df, metric, smaller_better):
                         vdf = target_df.dropna(subset=[metric])
                         if vdf.empty: return 0, 0, 0
@@ -579,27 +578,40 @@ else:
                         best = vdf[metric].min() if smaller_better else vdf[metric].max()
                         return avg, best, len(vdf)
 
+                    # 各データの統計を取得
+                    avg_total, best_total, cnt_total = get_stats(final_gdf, target_metric_h, SMALLER_IS_BETTER)
                     avg_early, best_early, cnt_early = get_stats(df_early, target_metric_h, SMALLER_IS_BETTER)
                     avg_two, best_two, cnt_two = get_stats(df_two, target_metric_h, SMALLER_IS_BETTER)
 
                     fmt = "{:.3f}" if "時間" in target_metric_h else ("{:.2f}" if "手の最大スピード" in target_metric_h else "{:.1f}")
                     label_best = "最小(Best)" if SMALLER_IS_BETTER else "最高(Best)"
 
-                    st.markdown("##### 🟢 ストライク状況別サマリー")
-                    sum_c1, sum_c2 = st.columns(2)
+                    # --- A. 指標サマリー (3列比較) ---
+                    st.markdown(f"##### 📈 ストライク状況別比較 ({target_metric_h})")
+                    sum_c1, sum_c2, sum_c3 = st.columns(3)
+                    
                     with sum_c1:
-                        st.info(f"**0, 1ストライク** ({cnt_early}打席)")
+                        st.markdown("<div style='text-align: center; font-weight: bold;'>🔹 全体</div>", unsafe_allow_html=True)
                         sc1, sc2 = st.columns(2)
-                        sc1.metric("平均値", fmt.format(avg_early))
-                        sc2.metric(label_best, fmt.format(best_early))
+                        sc1.metric("平均", fmt.format(avg_total))
+                        sc2.metric(label_best, fmt.format(best_total))
+                        st.caption(f"計 {cnt_total} 打席")
 
                     with sum_c2:
-                        st.error(f"**2ストライク** ({cnt_two}打席)")
-                        sc3, sc4 = sc1, sc2 = st.columns(2)
-                        sc3.metric("平均値", fmt.format(avg_two))
-                        sc4.metric(label_best, fmt.format(best_two))
+                        st.markdown("<div style='text-align: center; font-weight: bold; color: #2ecc71;'>🟢 0, 1ストライク</div>", unsafe_allow_html=True)
+                        sc3, sc4 = st.columns(2)
+                        sc3.metric("平均", fmt.format(avg_early))
+                        sc4.metric(label_best, fmt.format(best_early))
+                        st.caption(f"計 {cnt_early} 打席")
 
-                    # --- B. ヒートマップ表示 (選択中のストライク状況) ---
+                    with sum_c3:
+                        st.markdown("<div style='text-align: center; font-weight: bold; color: #e74c3c;'>🔴 2ストライク</div>", unsafe_allow_html=True)
+                        sc5, sc6 = st.columns(2)
+                        sc5.metric("平均", fmt.format(avg_two))
+                        sc6.metric(label_best, fmt.format(best_two))
+                        st.caption(f"計 {cnt_two} 打席")
+
+                    # --- B. ヒートマップ表示 ---
                     st.markdown("---")
                     view_mode = st.radio("表示するヒートマップの状況を選択", ["全状況", "0,1ストライク", "2ストライク"], horizontal=True)
                     
@@ -610,7 +622,7 @@ else:
                     else:
                         vdf_h = final_gdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
 
-                    st.subheader(f"🎯 コース別分析 ({view_mode})")
+                    st.subheader(f"🎯 コース別詳細分析 ({view_mode})")
                     
                     if not vdf_h.empty:
                         import plotly.graph_objects as go
