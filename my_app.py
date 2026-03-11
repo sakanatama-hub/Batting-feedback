@@ -524,7 +524,7 @@ else:
             with c1:
                 target_game_player = st.selectbox("分析する選手を選択", game_players, key="p_tab4")
             
-            # 選手で一旦フィルタリング
+            # 選手でフィルタリング
             gdf = db_game[db_game[game_player_col] == target_game_player].copy()
             
             if not gdf.empty:
@@ -535,16 +535,15 @@ else:
                 
                 cat_filtered_df = gdf[gdf['試合区別'] == selected_cat].copy()
                 
-                # 3. 対戦相手の選択
+                # 3. 対戦相手（または全試合合計）の選択
                 opponent_col = cat_filtered_df.columns[0]
                 cat_filtered_df['Match_Label'] = cat_filtered_df[opponent_col].astype(str) + " (" + cat_filtered_df['DateTime'].astype(str).str[:10] + ")"
                 
                 match_options = ["全試合合計"] + sorted(cat_filtered_df['Match_Label'].unique().tolist(), reverse=True)
-
                 with c3:
                     selected_match = st.selectbox("試合（対戦相手）を選択", match_options, key="match_tab4")
 
-                # 4. 最終的な試合データの抽出
+                # 4. データの抽出
                 if selected_match == "全試合合計":
                     final_gdf = cat_filtered_df.copy()
                     display_title = f"📊 {selected_cat} 全試合合計データ ({len(final_gdf['Match_Label'].unique())}試合)"
@@ -554,89 +553,81 @@ else:
 
                 if not final_gdf.empty:
                     st.markdown(f"### {display_title}")
-                    
-                    # --- A. 指標サマリー ---
-                col_m1, col_m2, col_m3 = st.columns(3) # 3列に変更
-                
-                if '打球速度' in final_gdf.columns:
-                    final_gdf['打球速度'] = pd.to_numeric(final_gdf['打球速度'], errors='coerce')
-                    max_v = final_gdf['打球速度'].max()
-                    label_v = "期間中 最大速度" if selected_match == "全試合合計" else "試合中 最大速度"
-                    col_m1.metric(label_v, f"{max_v:.1f} km/h")
-                
-                if '結果' in final_gdf.columns:
-                    hits = len(final_gdf[final_gdf['結果'].str.contains('安打|本塁打|二塁打|三塁打', na=False)])
-                    label_h = "通算安打数" if selected_match == "全試合合計" else "この試合の安打数"
-                    col_m2.metric(label_h, f"{hits}")
 
-                # --- 追加：全コース平均値の表示 ---
-                if valid_metrics_h:
-                    # ヒートマップで選択されている指標の全体平均を計算
-                    # (この行より下で target_metric_h を定義している場合は、selectboxの後に移動させてください)
+                    # --- 事前準備：全体平均の計算 ---
+                    keywords_h = ["速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "度"]
+                    valid_metrics_h = [c for c in final_gdf.columns if any(k in str(c) for k in keywords_h)]
+                    valid_metrics_h = [c for c in valid_metrics_h if pd.to_numeric(final_gdf[c], errors='coerce').dropna().any()]
+
+                    target_metric_h = st.selectbox("分析する指標を選択", valid_metrics_h, key="m_tab4_h")
+                    
+                    # 数値型へ変換して平均値を算出
+                    final_gdf[target_metric_h] = pd.to_numeric(final_gdf[target_metric_h], errors='coerce')
+                    final_gdf['StrikeZoneX'] = pd.to_numeric(final_gdf['StrikeZoneX'], errors='coerce')
+                    final_gdf['StrikeZoneY'] = pd.to_numeric(final_gdf['StrikeZoneY'], errors='coerce')
+                    vdf_h = final_gdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
                     avg_val = vdf_h[target_metric_h].mean() if not vdf_h.empty else 0
+
+                    # --- A. 指標サマリー ---
+                    col_m1, col_m2, col_m3 = st.columns(3)
                     
-                    # 単位やフォーマットを指標に合わせて調整
-                    if "時間" in target_metric_h:
-                        fmt = f"{avg_val:.3f}"
-                    elif "手の最大スピード" in target_metric_h:
-                        fmt = f"{avg_val:.2f}"
-                    else:
-                        fmt = f"{avg_val:.1f}"
+                    if '打球速度' in final_gdf.columns:
+                        final_gdf['打球速度'] = pd.to_numeric(final_gdf['打球速度'], errors='coerce')
+                        max_v = final_gdf['打球速度'].max()
+                        label_v = "期間中 最大速度" if selected_match == "全試合合計" else "試合中 最大速度"
+                        col_m1.metric(label_v, f"{max_v:.1f} km/h")
                     
-                    col_m3.metric(f"全体平均 ({target_metric_h})", fmt)
-                    
+                    if '結果' in final_gdf.columns:
+                        hits = len(final_gdf[final_gdf['結果'].str.contains('安打|本塁打|二塁打|三塁打', na=False)])
+                        label_h = "通算安打数" if selected_match == "全試合合計" else "この試合の安打数"
+                        col_m2.metric(label_h, f"{hits}")
+
+                    # 全体平均の表示
+                    if target_metric_h:
+                        fmt = f"{avg_val:.3f}" if "時間" in target_metric_h else (f"{avg_val:.2f}" if "手の最大スピード" in target_metric_h else f"{avg_val:.1f}")
+                        col_m3.metric(f"全体平均 ({target_metric_h})", fmt)
+
                     # --- B. ヒートマップ表示 ---
                     st.markdown("---")
                     heatmap_title = "🎯 期間中コース別平均 (3x3)" if selected_match == "全試合合計" else "🎯 試合用コース別ヒートマップ (3x3)"
                     st.subheader(heatmap_title)
                     
-                    keywords_h = ["速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "度"]
-                    valid_metrics_h = [c for c in final_gdf.columns if any(k in str(c) for k in keywords_h)]
-                    valid_metrics_h = [c for c in valid_metrics_h if pd.to_numeric(final_gdf[c], errors='coerce').dropna().any()]
-                    
-                    if valid_metrics_h:
-                        target_metric_h = st.selectbox("表示する指標を選択", valid_metrics_h, key="m_tab4_h")
+                    if not vdf_h.empty:
+                        import plotly.graph_objects as go
+                        import numpy as np
+                        fig_heat_g = go.Figure()
+                        fig_heat_g.add_shape(type="rect", x0=-200, x1=200, y0=20, y1=130, fillcolor="#222", line_width=1, layer="below")
                         
-                        final_gdf[target_metric_h] = pd.to_numeric(final_gdf[target_metric_h], errors='coerce')
-                        final_gdf['StrikeZoneX'] = pd.to_numeric(final_gdf['StrikeZoneX'], errors='coerce')
-                        final_gdf['StrikeZoneY'] = pd.to_numeric(final_gdf['StrikeZoneY'], errors='coerce')
+                        grid_val_g = np.zeros((3, 3)); grid_count_g = np.zeros((3, 3))
+                        for _, row in vdf_h.iterrows():
+                            # SZ_X_TH1 などの定数がグローバルで定義されている前提
+                            c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
+                            r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
+                            grid_val_g[r, c] += row[target_metric_h]; grid_count_g[r, c] += 1
                         
-                        vdf_h = final_gdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
+                        display_grid_g = np.where(grid_count_g > 0, grid_val_g / grid_count_g, 0)
                         
-                        if not vdf_h.empty:
-                            import plotly.graph_objects as go
-                            import numpy as np
-                            fig_heat_g = go.Figure()
-                            fig_heat_g.add_shape(type="rect", x0=-200, x1=200, y0=20, y1=130, fillcolor="#222", line_width=1, layer="below")
-                            
-                            grid_val_g = np.zeros((3, 3)); grid_count_g = np.zeros((3, 3))
-                            for _, row in vdf_h.iterrows():
-                                c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
-                                r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
-                                grid_val_g[r, c] += row[target_metric_h]; grid_count_g[r, c] += 1
-                            
-                            display_grid_g = np.where(grid_count_g > 0, grid_val_g / grid_count_g, 0)
-                            
-                            for r_idx in range(3):
-                                for c_idx in range(3):
-                                    x0, x1 = -150 + c_idx*100, -50 + c_idx*100
-                                    y0, y1 = 90 - r_idx*35, 125 - r_idx*35
-                                    v = display_grid_g[r_idx, c_idx]; cnt = int(grid_count_g[r_idx, c_idx])
-                                    color, f_color = get_color(v, target_metric_h, row_idx=r_idx)
-                                    fig_heat_g.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#444", width=2))
-                                    if v > 0:
-                                        txt = f"{v:.2f}" if "手の最大スピード" in target_metric_h else (f"{v:.3f}" if "時間" in target_metric_h else f"{v:.1f}")
-                                        fig_heat_g.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2 + 5, text=txt, showarrow=False, font=dict(size=18, color=f_color, weight="bold"))
-                                        fig_heat_g.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2 - 10, text=f"{cnt}打席", showarrow=False, font=dict(size=11, color=f_color))
-                            
-                            fig_heat_g.update_layout(width=500, height=500, xaxis=dict(visible=False, range=[-210, 210]), yaxis=dict(visible=False, range=[10, 140]), plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10,r=10,t=10,b=10))
-                            st.plotly_chart(fig_heat_g, config={'displayModeBar': False})
-                        else:
-                            st.warning("有効なコースデータがありません。")
+                        for r_idx in range(3):
+                            for c_idx in range(3):
+                                x0, x1 = -150 + c_idx*100, -50 + c_idx*100
+                                y0, y1 = 90 - r_idx*35, 125 - r_idx*35
+                                v = display_grid_g[r_idx, c_idx]; cnt = int(grid_count_g[r_idx, c_idx])
+                                color, f_color = get_color(v, target_metric_h, row_idx=r_idx)
+                                fig_heat_g.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#444", width=2))
+                                if v > 0:
+                                    txt = f"{v:.2f}" if "手の最大スピード" in target_metric_h else (f"{v:.3f}" if "時間" in target_metric_h else f"{v:.1f}")
+                                    fig_heat_g.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2 + 5, text=txt, showarrow=False, font=dict(size=18, color=f_color, weight="bold"))
+                                    fig_heat_g.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2 - 10, text=f"{cnt}打席", showarrow=False, font=dict(size=11, color=f_color))
+                        
+                        fig_heat_g.update_layout(width=500, height=500, xaxis=dict(visible=False, range=[-210, 210]), yaxis=dict(visible=False, range=[10, 140]), plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10,r=10,t=10,b=10))
+                        st.plotly_chart(fig_heat_g, config={'displayModeBar': False})
+                    else:
+                        st.warning("この条件での有効なコースデータがありません。")
 
                     # --- C. 詳細データ一覧 ---
                     st.markdown("---")
                     st.write(f"🔍 **詳細データ一覧 ({'全試合' if selected_match == '全試合合計' else '選択試合'})**")
+                    # 1~5列目と、9列目以降を結合（Match_Label等の付加列を除外）
                     cols_idx = list(range(1, 6)) + list(range(9, len(final_gdf.columns) - 1))
                     display_df = final_gdf.iloc[:, cols_idx]
                     st.dataframe(display_df, use_container_width=True)
