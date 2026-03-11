@@ -515,9 +515,6 @@ else:
     with tab4:
         st.title("🏟️ 試合分析")
         
-        # 冒頭で定義されている SZ_X_TH1 などの変数を使用します
-        # もしスコープの関係でエラーが出る場合は、ここで再度定義するか global 宣言を検討してください。
-
         if not db_game.empty:
             # 1. 選手選択
             game_player_col = 'Player Name' if 'Player Name' in db_game.columns else db_game.columns[-1]
@@ -553,110 +550,111 @@ else:
                 if not final_gdf.empty:
                     st.markdown(f"### {display_title}")
 
-                    # --- 統計計算 ---
+                    # --- 統計計算準備 ---
                     keywords_h = ["速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "度"]
                     valid_metrics_h = [c for c in final_gdf.columns if any(k in str(c) for k in keywords_h)]
                     valid_metrics_h = [c for c in valid_metrics_h if pd.to_numeric(final_gdf[c], errors='coerce').dropna().any()]
-
                     target_metric_h = st.selectbox("分析する指標を選択", valid_metrics_h, key="m_tab4_h")
                     
-                    # 数値が小さい方が良い指標の判定
                     SMALLER_IS_BETTER = any(k in target_metric_h for k in ["時間", "度", "誤差", "ブレ"])
 
-                    # 座標と指標を確実に数値化
+                    # データの数値化
                     final_gdf[target_metric_h] = pd.to_numeric(final_gdf[target_metric_h], errors='coerce')
                     final_gdf['StrikeZoneX'] = pd.to_numeric(final_gdf['StrikeZoneX'], errors='coerce')
                     final_gdf['StrikeZoneY'] = pd.to_numeric(final_gdf['StrikeZoneY'], errors='coerce')
-                    
-                    vdf_h = final_gdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
-                    
-                    avg_val = vdf_h[target_metric_h].mean() if not vdf_h.empty else 0
-                    
-                    if SMALLER_IS_BETTER:
-                        best_stat_val = vdf_h[target_metric_h].min() if not vdf_h.empty else 0
-                        label_best = "最小値 (Best)"
-                    else:
-                        best_stat_val = vdf_h[target_metric_h].max() if not vdf_h.empty else 0
-                        label_best = "最高値 (Best)"
 
-                    # --- A. 指標サマリー ---
-                    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-                    if '打球速度' in final_gdf.columns:
-                        col_m1.metric("最大打球速度", f"{pd.to_numeric(final_gdf['打球速度'], errors='coerce').max():.1f} km/h")
-                    if '結果' in final_gdf.columns:
-                        hits = len(final_gdf[final_gdf['結果'].str.contains('安打|本塁打|二塁打|三塁打', na=False)])
-                        col_m2.metric("安打数", f"{hits}")
-                    if target_metric_h:
-                        fmt_avg = f"{avg_val:.3f}" if "時間" in target_metric_h else (f"{avg_val:.2f}" if "手の最大スピード" in target_metric_h else f"{avg_val:.1f}")
-                        col_m3.metric(f"全体平均({target_metric_h})", fmt_avg)
-                        fmt_best = f"{best_stat_val:.3f}" if "時間" in target_metric_h else (f"{best_stat_val:.2f}" if "手の最大スピード" in target_metric_h else f"{best_stat_val:.1f}")
-                        col_m4.metric(label_best, fmt_best)
+                    # --- ストライク状況別のデータ抽出 (3列目を参照) ---
+                    # 3列目(index=2)を取得。0,1,2が入っている前提
+                    strike_col = final_gdf.columns[2]
+                    final_gdf[strike_col] = pd.to_numeric(final_gdf[strike_col], errors='coerce')
+                    
+                    df_early = final_gdf[final_gdf[strike_col] != 2].copy()  # 0,1ストライク
+                    df_two = final_gdf[final_gdf[strike_col] == 2].copy()    # 2ストライク
 
-                    # --- B. ヒートマップ表示 ---
+                    # --- A. 指標サマリー (比較表示) ---
+                    def get_stats(target_df, metric, smaller_better):
+                        vdf = target_df.dropna(subset=[metric])
+                        if vdf.empty: return 0, 0, 0
+                        avg = vdf[metric].mean()
+                        best = vdf[metric].min() if smaller_better else vdf[metric].max()
+                        return avg, best, len(vdf)
+
+                    avg_early, best_early, cnt_early = get_stats(df_early, target_metric_h, SMALLER_IS_BETTER)
+                    avg_two, best_two, cnt_two = get_stats(df_two, target_metric_h, SMALLER_IS_BETTER)
+
+                    fmt = "{:.3f}" if "時間" in target_metric_h else ("{:.2f}" if "手の最大スピード" in target_metric_h else "{:.1f}")
+                    label_best = "最小(Best)" if SMALLER_IS_BETTER else "最高(Best)"
+
+                    st.markdown("##### 🟢 ストライク状況別サマリー")
+                    sum_c1, sum_c2 = st.columns(2)
+                    with sum_c1:
+                        st.info(f"**0, 1ストライク** ({cnt_early}打席)")
+                        sc1, sc2 = st.columns(2)
+                        sc1.metric("平均値", fmt.format(avg_early))
+                        sc2.metric(label_best, fmt.format(best_early))
+
+                    with sum_c2:
+                        st.error(f"**2ストライク** ({cnt_two}打席)")
+                        sc3, sc4 = sc1, sc2 = st.columns(2)
+                        sc3.metric("平均値", fmt.format(avg_two))
+                        sc4.metric(label_best, fmt.format(best_two))
+
+                    # --- B. ヒートマップ表示 (選択中のストライク状況) ---
                     st.markdown("---")
-                    st.subheader("🎯 コース別詳細分析 (3x3)")
+                    view_mode = st.radio("表示するヒートマップの状況を選択", ["全状況", "0,1ストライク", "2ストライク"], horizontal=True)
+                    
+                    if view_mode == "0,1ストライク":
+                        vdf_h = df_early.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
+                    elif view_mode == "2ストライク":
+                        vdf_h = df_two.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
+                    else:
+                        vdf_h = final_gdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
+
+                    st.subheader(f"🎯 コース別分析 ({view_mode})")
                     
                     if not vdf_h.empty:
                         import plotly.graph_objects as go
                         import numpy as np
                         fig_heat_g = go.Figure()
-                        
-                        # 背景のストライクゾーン枠
                         fig_heat_g.add_shape(type="rect", x0=SZ_X_MIN, x1=SZ_X_MAX, y0=SZ_Y_MIN, y1=SZ_Y_MAX, fillcolor="#222", line_width=1, layer="below")
                         
-                        grid_val_g = np.zeros((3, 3))
-                        grid_count_g = np.zeros((3, 3))
-                        
+                        grid_val_g = np.zeros((3, 3)); grid_count_g = np.zeros((3, 3))
                         for _, row in vdf_h.iterrows():
-                            x = row['StrikeZoneX']
-                            y = row['StrikeZoneY']
-                            
-                            # あなたの定義(SZ_X_TH1等)に基づいた正確な判定
+                            x, y = row['StrikeZoneX'], row['StrikeZoneY']
                             if x < SZ_X_TH1: c = 0
                             elif x <= SZ_X_TH2: c = 1
                             else: c = 2
-                            
                             if y > SZ_Y_TH2: r = 0
                             elif y > SZ_Y_TH1: r = 1
                             else: r = 2
-                            
-                            grid_val_g[r, c] += row[target_metric_h]
-                            grid_count_g[r, c] += 1
+                            grid_val_g[r, c] += row[target_metric_h]; grid_count_g[r, c] += 1
                         
                         display_grid_g = np.where(grid_count_g > 0, grid_val_g / grid_count_g, 0)
-                        
-                        # グリッド描画用の幅と高さ計算
                         w = (SZ_X_MAX - SZ_X_MIN) / 3
                         h_grid = (SZ_Y_MAX - SZ_Y_MIN) / 3
                         
                         for r_idx in range(3):
                             for c_idx in range(3):
-                                x0 = SZ_X_MIN + c_idx * w
-                                x1 = x0 + w
+                                x0, x1 = SZ_X_MIN + c_idx * w, SZ_X_MIN + (c_idx+1) * w
                                 y1 = SZ_Y_MAX - r_idx * h_grid
                                 y0 = y1 - h_grid
-                                
-                                v = display_grid_g[r_idx, c_idx]
-                                cnt = int(grid_count_g[r_idx, c_idx])
-                                
+                                v = display_grid_g[r_idx, c_idx]; cnt = int(grid_count_g[r_idx, c_idx])
                                 color, f_color = get_color(v, target_metric_h, row_idx=r_idx)
                                 fig_heat_g.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#444", width=2))
-                                
                                 if v > 0:
-                                    txt = f"{v:.2f}" if "手の最大スピード" in target_metric_h else (f"{v:.3f}" if "時間" in target_metric_h else f"{v:.1f}")
+                                    txt = fmt.format(v)
                                     fig_heat_g.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2 + (h_grid*0.15), text=txt, showarrow=False, font=dict(size=16, color=f_color, weight="bold"))
                                     fig_heat_g.add_annotation(x=(x0+x1)/2, y=(y0+y1)/2 - (h_grid*0.2), text=f"{cnt}打席", showarrow=False, font=dict(size=10, color=f_color))
                         
                         fig_heat_g.update_layout(width=500, height=550, xaxis=dict(visible=False, range=[SZ_X_MIN-10, SZ_X_MAX+10]), yaxis=dict(visible=False, range=[SZ_Y_MIN-10, SZ_Y_MAX+10]), plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10,r=10,t=10,b=10))
                         st.plotly_chart(fig_heat_g, config={'displayModeBar': False})
                     else:
-                        st.warning("有効なコースデータがありません。")
+                        st.warning(f"{view_mode} の有効なデータがありません。")
 
                     st.markdown("---")
                     st.write(f"🔍 **詳細データ一覧**")
                     cols_idx = list(range(1, 6)) + list(range(9, len(final_gdf.columns) - 1))
                     st.dataframe(final_gdf.iloc[:, cols_idx], use_container_width=True)
-
                 else:
                     st.warning("条件に一致するデータがありません。")
             else:
