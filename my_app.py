@@ -513,8 +513,10 @@ else:
 
        # --- タブ4：試合分析 (構成入れ替え：ヒートマップ → 詳細データ) ---
     with tab4:
+    with tab4:
         st.title("🏟️ 試合分析")
         
+        # ストライクゾーン境界値
         SZ_X_TH1, SZ_X_TH2 = -66.6, 66.6
         SZ_Y_TH1, SZ_Y_TH2 = 56.6, 93.3
 
@@ -543,7 +545,7 @@ else:
 
                 if selected_match == "全試合合計":
                     final_gdf = cat_filtered_df.copy()
-                    display_title = f"📊 {selected_cat} 全試合合計データ ({len(final_gdf['Match_Label'].unique())}試合)"
+                    display_title = f"📊 {selected_cat} 全試合合計データ"
                 else:
                     final_gdf = cat_filtered_df[cat_filtered_df['Match_Label'] == selected_match].copy()
                     display_title = f"⚡️ {selected_match}"
@@ -551,14 +553,14 @@ else:
                 if not final_gdf.empty:
                     st.markdown(f"### {display_title}")
 
-                    # --- 統計計算と「良し悪し」の判定 ---
+                    # --- 統計計算 ---
                     keywords_h = ["速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "度"]
                     valid_metrics_h = [c for c in final_gdf.columns if any(k in str(c) for k in keywords_h)]
                     valid_metrics_h = [c for c in valid_metrics_h if pd.to_numeric(final_gdf[c], errors='coerce').dropna().any()]
 
                     target_metric_h = st.selectbox("分析する指標を選択", valid_metrics_h, key="m_tab4_h")
                     
-                    # 【重要】数値が小さい方が良い指標（スイング時間、ヘッドのブレなど）の判定
+                    # 【判定】数値が小さい方が良い指標か？ (NameError対策済み)
                     SMALLER_IS_BETTER = any(k in target_metric_h for k in ["時間", "度", "誤差", "ブレ"])
 
                     final_gdf[target_metric_h] = pd.to_numeric(final_gdf[target_metric_h], errors='coerce')
@@ -567,16 +569,22 @@ else:
                     vdf_h = final_gdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
                     
                     avg_val = vdf_h[target_metric_h].mean() if not vdf_h.empty else 0
-                    # 小さい方が良い指標の場合は「最小値」をベストとして表示、そうでなければ最大値
-                    best_stat_val = vdf_h[target_metric_h].min() if SMALL_IS_BETTER else vdf_h[target_metric_h].max()
+                    
+                    # ベストスコアの選出 (小さい方がいい指標ならmin、大きい方がいい指標ならmax)
+                    if SMALLER_IS_BETTER:
+                        best_stat_val = vdf_h[target_metric_h].min() if not vdf_h.empty else 0
+                        label_best = "最小値 (Best)"
+                    else:
+                        best_stat_val = vdf_h[target_metric_h].max() if not vdf_h.empty else 0
+                        label_best = "最高値 (Best)"
 
                     # --- A. 指標サマリー ---
                     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
                     
                     if '打球速度' in final_gdf.columns:
                         final_gdf['打球速度'] = pd.to_numeric(final_gdf['打球速度'], errors='coerce')
-                        best_v = final_gdf['打球速度'].max()
-                        col_m1.metric("最大打球速度", f"{best_v:.1f} km/h")
+                        max_v = final_gdf['打球速度'].max()
+                        col_m1.metric("最大打球速度", f"{max_v:.1f} km/h")
                     
                     if '結果' in final_gdf.columns:
                         hits = len(final_gdf[final_gdf['結果'].str.contains('安打|本塁打|二塁打|三塁打', na=False)])
@@ -587,7 +595,6 @@ else:
                         col_m3.metric(f"全体平均({target_metric_h})", fmt_avg)
 
                         fmt_best = f"{best_stat_val:.3f}" if "時間" in target_metric_h else (f"{best_stat_val:.2f}" if "手の最大スピード" in target_metric_h else f"{best_stat_val:.1f}")
-                        label_best = "最小値 (Best)" if SMALLER_IS_BETTER else "最高値 (Best)"
                         col_m4.metric(label_best, fmt_best)
 
                     # --- B. ヒートマップ表示 ---
@@ -612,14 +619,11 @@ else:
                             for c_idx in range(3):
                                 x0, x1 = -150 + c_idx*100, -50 + c_idx*100
                                 y0, y1 = 90 - r_idx*35, 125 - r_idx*35
-                                v = display_grid_g[r_idx, c_idx]; cnt = int(grid_count_g[r_idx, c_idx])
+                                v = display_grid_g[r_idx, c_idx]
+                                cnt = int(grid_count_g[r_idx, c_idx])
                                 
-                                # 色の決定（小さい方が良い指標の場合は反転させる）
-                                # get_colorの引数に反転フラグを渡すか、ここで色を調整
+                                # get_color関数の呼び出し（外部定義されている前提）
                                 color, f_color = get_color(v, target_metric_h, row_idx=r_idx)
-                                
-                                # 追加修正：小さい方が良い指標の場合、平均より小さい（良い）ところを強調
-                                # もし get_color 自体が「大きい＝赤」固定なら、ここで補正可能です
                                 
                                 fig_heat_g.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#444", width=2))
                                 if v > 0:
@@ -635,8 +639,7 @@ else:
                     st.markdown("---")
                     st.write(f"🔍 **詳細データ一覧**")
                     cols_idx = list(range(1, 6)) + list(range(9, len(final_gdf.columns) - 1))
-                    display_df = final_gdf.iloc[:, cols_idx]
-                    st.dataframe(display_df, use_container_width=True)
+                    st.dataframe(final_gdf.iloc[:, cols_idx], use_container_width=True)
 
                 else:
                     st.warning("条件に一致するデータがありません。")
