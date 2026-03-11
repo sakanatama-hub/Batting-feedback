@@ -515,12 +515,10 @@ else:
     with tab4:
         st.title("🏟️ 試合分析")
         
-        # --- ストライクゾーンの境界しきい値を定義（エラー回避用） ---
         SZ_X_TH1, SZ_X_TH2 = -66.6, 66.6
         SZ_Y_TH1, SZ_Y_TH2 = 56.6, 93.3
 
         if not db_game.empty:
-            # 1. 選手選択
             game_player_col = 'Player Name' if 'Player Name' in db_game.columns else db_game.columns[-1]
             game_players = sort_players_by_number(db_game[game_player_col].dropna().unique().tolist())
             
@@ -528,18 +526,14 @@ else:
             with c1:
                 target_game_player = st.selectbox("分析する選手を選択", game_players, key="p_tab4")
             
-            # 選手でフィルタリング
             gdf = db_game[db_game[game_player_col] == target_game_player].copy()
             
             if not gdf.empty:
-                # 2. 試合種別の選択
                 game_cats = sorted(gdf['試合区別'].dropna().unique().tolist())
                 with c2:
                     selected_cat = st.selectbox("試合種別を選択", game_cats, key="cat_tab4")
                 
                 cat_filtered_df = gdf[gdf['試合区別'] == selected_cat].copy()
-                
-                # 3. 対戦相手（または全試合合計）の選択
                 opponent_col = cat_filtered_df.columns[0]
                 cat_filtered_df['Match_Label'] = cat_filtered_df[opponent_col].astype(str) + " (" + cat_filtered_df['DateTime'].astype(str).str[:10] + ")"
                 
@@ -547,7 +541,6 @@ else:
                 with c3:
                     selected_match = st.selectbox("試合（対戦相手）を選択", match_options, key="match_tab4")
 
-                # 4. データの抽出
                 if selected_match == "全試合合計":
                     final_gdf = cat_filtered_df.copy()
                     display_title = f"📊 {selected_cat} 全試合合計データ ({len(final_gdf['Match_Label'].unique())}試合)"
@@ -558,51 +551,48 @@ else:
                 if not final_gdf.empty:
                     st.markdown(f"### {display_title}")
 
-                    # --- 事前準備：統計値の計算 ---
+                    # --- 統計計算と「良し悪し」の判定 ---
                     keywords_h = ["速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "度"]
                     valid_metrics_h = [c for c in final_gdf.columns if any(k in str(c) for k in keywords_h)]
                     valid_metrics_h = [c for c in valid_metrics_h if pd.to_numeric(final_gdf[c], errors='coerce').dropna().any()]
 
                     target_metric_h = st.selectbox("分析する指標を選択", valid_metrics_h, key="m_tab4_h")
                     
-                    # 数値型へ変換
+                    # 【重要】数値が小さい方が良い指標（スイング時間、ヘッドのブレなど）の判定
+                    SMALLER_IS_BETTER = any(k in target_metric_h for k in ["時間", "度", "誤差", "ブレ"])
+
                     final_gdf[target_metric_h] = pd.to_numeric(final_gdf[target_metric_h], errors='coerce')
                     final_gdf['StrikeZoneX'] = pd.to_numeric(final_gdf['StrikeZoneX'], errors='coerce')
                     final_gdf['StrikeZoneY'] = pd.to_numeric(final_gdf['StrikeZoneY'], errors='coerce')
                     vdf_h = final_gdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
                     
-                    # 平均値と最高値の算出
                     avg_val = vdf_h[target_metric_h].mean() if not vdf_h.empty else 0
-                    max_val = vdf_h[target_metric_h].max() if not vdf_h.empty else 0
+                    # 小さい方が良い指標の場合は「最小値」をベストとして表示、そうでなければ最大値
+                    best_stat_val = vdf_h[target_metric_h].min() if SMALL_IS_BETTER else vdf_h[target_metric_h].max()
 
-                    # --- A. 指標サマリー (4列構成) ---
+                    # --- A. 指標サマリー ---
                     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
                     
-                    # 1. 打球速度（固定）
                     if '打球速度' in final_gdf.columns:
                         final_gdf['打球速度'] = pd.to_numeric(final_gdf['打球速度'], errors='coerce')
                         best_v = final_gdf['打球速度'].max()
                         col_m1.metric("最大打球速度", f"{best_v:.1f} km/h")
                     
-                    # 2. 安打数（固定）
                     if '結果' in final_gdf.columns:
                         hits = len(final_gdf[final_gdf['結果'].str.contains('安打|本塁打|二塁打|三塁打', na=False)])
                         col_m2.metric("安打数", f"{hits}")
 
-                    # 3. 選択指標の全体平均
                     if target_metric_h:
                         fmt_avg = f"{avg_val:.3f}" if "時間" in target_metric_h else (f"{avg_val:.2f}" if "手の最大スピード" in target_metric_h else f"{avg_val:.1f}")
                         col_m3.metric(f"全体平均({target_metric_h})", fmt_avg)
 
-                    # 4. 選択指標の最高値
-                    if target_metric_h:
-                        fmt_max = f"{max_val:.3f}" if "時間" in target_metric_h else (f"{max_val:.2f}" if "手の最大スピード" in target_metric_h else f"{max_val:.1f}")
-                        col_m4.metric(f"最高値({target_metric_h})", fmt_max)
+                        fmt_best = f"{best_stat_val:.3f}" if "時間" in target_metric_h else (f"{best_stat_val:.2f}" if "手の最大スピード" in target_metric_h else f"{best_stat_val:.1f}")
+                        label_best = "最小値 (Best)" if SMALLER_IS_BETTER else "最高値 (Best)"
+                        col_m4.metric(label_best, fmt_best)
 
                     # --- B. ヒートマップ表示 ---
                     st.markdown("---")
-                    heatmap_title = "🎯 期間中コース別平均 (3x3)" if selected_match == "全試合合計" else "🎯 試合用コース別ヒートマップ (3x3)"
-                    st.subheader(heatmap_title)
+                    st.subheader("🎯 コース別詳細分析 (3x3)")
                     
                     if not vdf_h.empty:
                         import plotly.graph_objects as go
@@ -612,7 +602,6 @@ else:
                         
                         grid_val_g = np.zeros((3, 3)); grid_count_g = np.zeros((3, 3))
                         for _, row in vdf_h.iterrows():
-                            # 事前に定義したしきい値を使用して判定
                             c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
                             r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
                             grid_val_g[r, c] += row[target_metric_h]; grid_count_g[r, c] += 1
@@ -624,8 +613,14 @@ else:
                                 x0, x1 = -150 + c_idx*100, -50 + c_idx*100
                                 y0, y1 = 90 - r_idx*35, 125 - r_idx*35
                                 v = display_grid_g[r_idx, c_idx]; cnt = int(grid_count_g[r_idx, c_idx])
-                                # get_color関数は外部で定義されている前提
+                                
+                                # 色の決定（小さい方が良い指標の場合は反転させる）
+                                # get_colorの引数に反転フラグを渡すか、ここで色を調整
                                 color, f_color = get_color(v, target_metric_h, row_idx=r_idx)
+                                
+                                # 追加修正：小さい方が良い指標の場合、平均より小さい（良い）ところを強調
+                                # もし get_color 自体が「大きい＝赤」固定なら、ここで補正可能です
+                                
                                 fig_heat_g.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#444", width=2))
                                 if v > 0:
                                     txt = f"{v:.2f}" if "手の最大スピード" in target_metric_h else (f"{v:.3f}" if "時間" in target_metric_h else f"{v:.1f}")
@@ -637,9 +632,8 @@ else:
                     else:
                         st.warning("有効なコースデータがありません。")
 
-                    # --- C. 詳細データ一覧 ---
                     st.markdown("---")
-                    st.write(f"🔍 **詳細データ一覧 ({'全試合' if selected_match == '全試合合計' else '選択試合'})**")
+                    st.write(f"🔍 **詳細データ一覧**")
                     cols_idx = list(range(1, 6)) + list(range(9, len(final_gdf.columns) - 1))
                     display_df = final_gdf.iloc[:, cols_idx]
                     st.dataframe(display_df, use_container_width=True)
