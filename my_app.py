@@ -556,18 +556,35 @@ else:
                     st.markdown(f"### {display_title}")
                     
                     # --- A. 指標サマリー ---
-                    col_m1, col_m2 = st.columns(2)
-                    if '打球速度' in final_gdf.columns:
-                        final_gdf['打球速度'] = pd.to_numeric(final_gdf['打球速度'], errors='coerce')
-                        max_v = final_gdf['打球速度'].max()
-                        label_v = "期間中 最大速度" if selected_match == "全試合合計" else "試合中 最大速度"
-                        col_m1.metric(label_v, f"{max_v:.1f} km/h")
-                    
-                    if '結果' in final_gdf.columns:
-                        hits = len(final_gdf[final_gdf['結果'].str.contains('安打|本塁打|二塁打|三塁打', na=False)])
-                        label_h = "通算安打数" if selected_match == "全試合合計" else "この試合の安打数"
-                        col_m2.metric(label_h, f"{hits}")
+                col_m1, col_m2, col_m3 = st.columns(3) # 3列に変更
+                
+                if '打球速度' in final_gdf.columns:
+                    final_gdf['打球速度'] = pd.to_numeric(final_gdf['打球速度'], errors='coerce')
+                    max_v = final_gdf['打球速度'].max()
+                    label_v = "期間中 最大速度" if selected_match == "全試合合計" else "試合中 最大速度"
+                    col_m1.metric(label_v, f"{max_v:.1f} km/h")
+                
+                if '結果' in final_gdf.columns:
+                    hits = len(final_gdf[final_gdf['結果'].str.contains('安打|本塁打|二塁打|三塁打', na=False)])
+                    label_h = "通算安打数" if selected_match == "全試合合計" else "この試合の安打数"
+                    col_m2.metric(label_h, f"{hits}")
 
+                # --- 追加：全コース平均値の表示 ---
+                if valid_metrics_h:
+                    # ヒートマップで選択されている指標の全体平均を計算
+                    # (この行より下で target_metric_h を定義している場合は、selectboxの後に移動させてください)
+                    avg_val = vdf_h[target_metric_h].mean() if not vdf_h.empty else 0
+                    
+                    # 単位やフォーマットを指標に合わせて調整
+                    if "時間" in target_metric_h:
+                        fmt = f"{avg_val:.3f}"
+                    elif "手の最大スピード" in target_metric_h:
+                        fmt = f"{avg_val:.2f}"
+                    else:
+                        fmt = f"{avg_val:.1f}"
+                    
+                    col_m3.metric(f"全体平均 ({target_metric_h})", fmt)
+                    
                     # --- B. ヒートマップ表示 ---
                     st.markdown("---")
                     heatmap_title = "🎯 期間中コース別平均 (3x3)" if selected_match == "全試合合計" else "🎯 試合用コース別ヒートマップ (3x3)"
