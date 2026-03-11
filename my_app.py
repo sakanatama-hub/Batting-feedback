@@ -515,6 +515,10 @@ else:
     with tab4:
         st.title("🏟️ 試合分析")
         
+        # --- ストライクゾーンの境界しきい値を定義（エラー回避用） ---
+        SZ_X_TH1, SZ_X_TH2 = -66.6, 66.6
+        SZ_Y_TH1, SZ_Y_TH2 = 56.6, 93.3
+
         if not db_game.empty:
             # 1. 選手選択
             game_player_col = 'Player Name' if 'Player Name' in db_game.columns else db_game.columns[-1]
@@ -563,6 +567,8 @@ else:
                     
                     # 数値型へ変換
                     final_gdf[target_metric_h] = pd.to_numeric(final_gdf[target_metric_h], errors='coerce')
+                    final_gdf['StrikeZoneX'] = pd.to_numeric(final_gdf['StrikeZoneX'], errors='coerce')
+                    final_gdf['StrikeZoneY'] = pd.to_numeric(final_gdf['StrikeZoneY'], errors='coerce')
                     vdf_h = final_gdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
                     
                     # 平均値と最高値の算出
@@ -588,7 +594,7 @@ else:
                         fmt_avg = f"{avg_val:.3f}" if "時間" in target_metric_h else (f"{avg_val:.2f}" if "手の最大スピード" in target_metric_h else f"{avg_val:.1f}")
                         col_m3.metric(f"全体平均({target_metric_h})", fmt_avg)
 
-                    # 4. 選択指標の最高値（追加）
+                    # 4. 選択指標の最高値
                     if target_metric_h:
                         fmt_max = f"{max_val:.3f}" if "時間" in target_metric_h else (f"{max_val:.2f}" if "手の最大スピード" in target_metric_h else f"{max_val:.1f}")
                         col_m4.metric(f"最高値({target_metric_h})", fmt_max)
@@ -606,6 +612,7 @@ else:
                         
                         grid_val_g = np.zeros((3, 3)); grid_count_g = np.zeros((3, 3))
                         for _, row in vdf_h.iterrows():
+                            # 事前に定義したしきい値を使用して判定
                             c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
                             r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
                             grid_val_g[r, c] += row[target_metric_h]; grid_count_g[r, c] += 1
@@ -617,6 +624,7 @@ else:
                                 x0, x1 = -150 + c_idx*100, -50 + c_idx*100
                                 y0, y1 = 90 - r_idx*35, 125 - r_idx*35
                                 v = display_grid_g[r_idx, c_idx]; cnt = int(grid_count_g[r_idx, c_idx])
+                                # get_color関数は外部で定義されている前提
                                 color, f_color = get_color(v, target_metric_h, row_idx=r_idx)
                                 fig_heat_g.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#444", width=2))
                                 if v > 0:
@@ -627,7 +635,7 @@ else:
                         fig_heat_g.update_layout(width=500, height=500, xaxis=dict(visible=False, range=[-210, 210]), yaxis=dict(visible=False, range=[10, 140]), plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=10,r=10,t=10,b=10))
                         st.plotly_chart(fig_heat_g, config={'displayModeBar': False})
                     else:
-                        st.warning("この条件での有効なコースデータがありません。")
+                        st.warning("有効なコースデータがありません。")
 
                     # --- C. 詳細データ一覧 ---
                     st.markdown("---")
@@ -639,6 +647,6 @@ else:
                 else:
                     st.warning("条件に一致するデータがありません。")
             else:
-                st.warning(f"{target_game_player} の試合データはまだありません。")
+                st.warning(f"{target_game_player} の試合データは見つかりませんでした。")
         else:
             st.info("試合データ (game_data.csv) が登録されていません。")
