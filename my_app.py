@@ -554,38 +554,44 @@ else:
                 if not final_gdf.empty:
                     st.markdown(f"### {display_title}")
 
-                    # --- 事前準備：全体平均の計算 ---
+                    # --- 事前準備：統計値の計算 ---
                     keywords_h = ["速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "度"]
                     valid_metrics_h = [c for c in final_gdf.columns if any(k in str(c) for k in keywords_h)]
                     valid_metrics_h = [c for c in valid_metrics_h if pd.to_numeric(final_gdf[c], errors='coerce').dropna().any()]
 
                     target_metric_h = st.selectbox("分析する指標を選択", valid_metrics_h, key="m_tab4_h")
                     
-                    # 数値型へ変換して平均値を算出
+                    # 数値型へ変換
                     final_gdf[target_metric_h] = pd.to_numeric(final_gdf[target_metric_h], errors='coerce')
-                    final_gdf['StrikeZoneX'] = pd.to_numeric(final_gdf['StrikeZoneX'], errors='coerce')
-                    final_gdf['StrikeZoneY'] = pd.to_numeric(final_gdf['StrikeZoneY'], errors='coerce')
                     vdf_h = final_gdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
-                    avg_val = vdf_h[target_metric_h].mean() if not vdf_h.empty else 0
-
-                    # --- A. 指標サマリー ---
-                    col_m1, col_m2, col_m3 = st.columns(3)
                     
+                    # 平均値と最高値の算出
+                    avg_val = vdf_h[target_metric_h].mean() if not vdf_h.empty else 0
+                    max_val = vdf_h[target_metric_h].max() if not vdf_h.empty else 0
+
+                    # --- A. 指標サマリー (4列構成) ---
+                    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                    
+                    # 1. 打球速度（固定）
                     if '打球速度' in final_gdf.columns:
                         final_gdf['打球速度'] = pd.to_numeric(final_gdf['打球速度'], errors='coerce')
-                        max_v = final_gdf['打球速度'].max()
-                        label_v = "期間中 最大速度" if selected_match == "全試合合計" else "試合中 最大速度"
-                        col_m1.metric(label_v, f"{max_v:.1f} km/h")
+                        best_v = final_gdf['打球速度'].max()
+                        col_m1.metric("最大打球速度", f"{best_v:.1f} km/h")
                     
+                    # 2. 安打数（固定）
                     if '結果' in final_gdf.columns:
                         hits = len(final_gdf[final_gdf['結果'].str.contains('安打|本塁打|二塁打|三塁打', na=False)])
-                        label_h = "通算安打数" if selected_match == "全試合合計" else "この試合の安打数"
-                        col_m2.metric(label_h, f"{hits}")
+                        col_m2.metric("安打数", f"{hits}")
 
-                    # 全体平均の表示
+                    # 3. 選択指標の全体平均
                     if target_metric_h:
-                        fmt = f"{avg_val:.3f}" if "時間" in target_metric_h else (f"{avg_val:.2f}" if "手の最大スピード" in target_metric_h else f"{avg_val:.1f}")
-                        col_m3.metric(f"全体平均 ({target_metric_h})", fmt)
+                        fmt_avg = f"{avg_val:.3f}" if "時間" in target_metric_h else (f"{avg_val:.2f}" if "手の最大スピード" in target_metric_h else f"{avg_val:.1f}")
+                        col_m3.metric(f"全体平均({target_metric_h})", fmt_avg)
+
+                    # 4. 選択指標の最高値（追加）
+                    if target_metric_h:
+                        fmt_max = f"{max_val:.3f}" if "時間" in target_metric_h else (f"{max_val:.2f}" if "手の最大スピード" in target_metric_h else f"{max_val:.1f}")
+                        col_m4.metric(f"最高値({target_metric_h})", fmt_max)
 
                     # --- B. ヒートマップ表示 ---
                     st.markdown("---")
@@ -600,7 +606,6 @@ else:
                         
                         grid_val_g = np.zeros((3, 3)); grid_count_g = np.zeros((3, 3))
                         for _, row in vdf_h.iterrows():
-                            # SZ_X_TH1 などの定数がグローバルで定義されている前提
                             c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
                             r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
                             grid_val_g[r, c] += row[target_metric_h]; grid_count_g[r, c] += 1
@@ -627,7 +632,6 @@ else:
                     # --- C. 詳細データ一覧 ---
                     st.markdown("---")
                     st.write(f"🔍 **詳細データ一覧 ({'全試合' if selected_match == '全試合合計' else '選択試合'})**")
-                    # 1~5列目と、9列目以降を結合（Match_Label等の付加列を除外）
                     cols_idx = list(range(1, 6)) + list(range(9, len(final_gdf.columns) - 1))
                     display_df = final_gdf.iloc[:, cols_idx]
                     st.dataframe(display_df, use_container_width=True)
