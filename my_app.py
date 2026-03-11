@@ -515,9 +515,9 @@ else:
     with tab4:
         st.title("🏟️ 試合分析")
         if not db_game.empty:
-    # 1. 選手選択
-    game_player_col = 'Player Name' if 'Player Name' in db_game.columns else db_game.columns[-1]
-    game_players = sort_players_by_number(db_game[game_player_col].dropna().unique().tolist())
+            # 1. 選手選択
+            game_player_col = 'Player Name' if 'Player Name' in db_game.columns else db_game.columns[-1]
+            game_players = sort_players_by_number(db_game[game_player_col].dropna().unique().tolist())
     
     c1, c2, c3 = st.columns([2, 3, 3])
     with c1:
