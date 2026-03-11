@@ -513,14 +513,14 @@ else:
 
        # --- タブ4：試合分析 (構成入れ替え：ヒートマップ → 詳細データ) ---
     with tab4:
-    with tab4:
         st.title("🏟️ 試合分析")
         
-        # ストライクゾーン境界値
+        # --- ストライクゾーンの境界しきい値を定義 ---
         SZ_X_TH1, SZ_X_TH2 = -66.6, 66.6
         SZ_Y_TH1, SZ_Y_TH2 = 56.6, 93.3
 
         if not db_game.empty:
+            # 1. 選手選択
             game_player_col = 'Player Name' if 'Player Name' in db_game.columns else db_game.columns[-1]
             game_players = sort_players_by_number(db_game[game_player_col].dropna().unique().tolist())
             
@@ -531,6 +531,7 @@ else:
             gdf = db_game[db_game[game_player_col] == target_game_player].copy()
             
             if not gdf.empty:
+                # 2. 試合種別と対戦相手の選択
                 game_cats = sorted(gdf['試合区別'].dropna().unique().tolist())
                 with c2:
                     selected_cat = st.selectbox("試合種別を選択", game_cats, key="cat_tab4")
@@ -543,6 +544,7 @@ else:
                 with c3:
                     selected_match = st.selectbox("試合（対戦相手）を選択", match_options, key="match_tab4")
 
+                # 4. データの抽出
                 if selected_match == "全試合合計":
                     final_gdf = cat_filtered_df.copy()
                     display_title = f"📊 {selected_cat} 全試合合計データ"
@@ -560,7 +562,7 @@ else:
 
                     target_metric_h = st.selectbox("分析する指標を選択", valid_metrics_h, key="m_tab4_h")
                     
-                    # 【判定】数値が小さい方が良い指標か？ (NameError対策済み)
+                    # 数値が小さい方が良い指標（時間、角度のブレなど）の判定
                     SMALLER_IS_BETTER = any(k in target_metric_h for k in ["時間", "度", "誤差", "ブレ"])
 
                     final_gdf[target_metric_h] = pd.to_numeric(final_gdf[target_metric_h], errors='coerce')
@@ -570,7 +572,7 @@ else:
                     
                     avg_val = vdf_h[target_metric_h].mean() if not vdf_h.empty else 0
                     
-                    # ベストスコアの選出 (小さい方がいい指標ならmin、大きい方がいい指標ならmax)
+                    # ベスト値の選定（小さい方がいいなら最小値、大きい方がいいなら最大値）
                     if SMALLER_IS_BETTER:
                         best_stat_val = vdf_h[target_metric_h].min() if not vdf_h.empty else 0
                         label_best = "最小値 (Best)"
@@ -593,7 +595,7 @@ else:
                     if target_metric_h:
                         fmt_avg = f"{avg_val:.3f}" if "時間" in target_metric_h else (f"{avg_val:.2f}" if "手の最大スピード" in target_metric_h else f"{avg_val:.1f}")
                         col_m3.metric(f"全体平均({target_metric_h})", fmt_avg)
-
+                        
                         fmt_best = f"{best_stat_val:.3f}" if "時間" in target_metric_h else (f"{best_stat_val:.2f}" if "手の最大スピード" in target_metric_h else f"{best_stat_val:.1f}")
                         col_m4.metric(label_best, fmt_best)
 
@@ -622,9 +624,7 @@ else:
                                 v = display_grid_g[r_idx, c_idx]
                                 cnt = int(grid_count_g[r_idx, c_idx])
                                 
-                                # get_color関数の呼び出し（外部定義されている前提）
                                 color, f_color = get_color(v, target_metric_h, row_idx=r_idx)
-                                
                                 fig_heat_g.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#444", width=2))
                                 if v > 0:
                                     txt = f"{v:.2f}" if "手の最大スピード" in target_metric_h else (f"{v:.3f}" if "時間" in target_metric_h else f"{v:.1f}")
