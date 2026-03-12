@@ -524,6 +524,10 @@ else:
             with c1:
                 target_game_player = st.selectbox("分析する選手を選択", game_players, key="p_tab4")
             
+            # --- 打ち手の判定（反転ロジック用） ---
+            player_hand = PLAYER_HANDS.get(target_game_player, "右")
+            st.markdown(f"👤 **{target_game_player}** ({player_hand}打者) の視点で表示中")
+            
             gdf = db_game[db_game[game_player_col] == target_game_player].copy()
             
             if not gdf.empty:
@@ -566,11 +570,9 @@ else:
                     # --- ストライク状況別のデータ抽出 (3列目を参照) ---
                     strike_col = final_gdf.columns[2]
                     final_gdf[strike_col] = pd.to_numeric(final_gdf[strike_col], errors='coerce')
-                    
-                    df_early = final_gdf[final_gdf[strike_col] != 2].copy()  # 0,1ストライク
-                    df_two = final_gdf[final_gdf[strike_col] == 2].copy()    # 2ストライク
+                    df_early = final_gdf[final_gdf[strike_col] != 2].copy()
+                    df_two = final_gdf[final_gdf[strike_col] == 2].copy()
 
-                    # 統計算出用関数
                     def get_stats(target_df, metric, smaller_better):
                         vdf = target_df.dropna(subset=[metric])
                         if vdf.empty: return 0, 0, 0
@@ -578,7 +580,6 @@ else:
                         best = vdf[metric].min() if smaller_better else vdf[metric].max()
                         return avg, best, len(vdf)
 
-                    # 各データの統計を取得
                     avg_total, best_total, cnt_total = get_stats(final_gdf, target_metric_h, SMALLER_IS_BETTER)
                     avg_early, best_early, cnt_early = get_stats(df_early, target_metric_h, SMALLER_IS_BETTER)
                     avg_two, best_two, cnt_two = get_stats(df_two, target_metric_h, SMALLER_IS_BETTER)
@@ -589,27 +590,15 @@ else:
                     # --- A. 指標サマリー (3列比較) ---
                     st.markdown(f"##### 📈 ストライク状況別比較 ({target_metric_h})")
                     sum_c1, sum_c2, sum_c3 = st.columns(3)
-                    
                     with sum_c1:
                         st.markdown("<div style='text-align: center; font-weight: bold;'>🔹 全体</div>", unsafe_allow_html=True)
-                        sc1, sc2 = st.columns(2)
-                        sc1.metric("平均", fmt.format(avg_total))
-                        sc2.metric(label_best, fmt.format(best_total))
-                        st.caption(f"計 {cnt_total} 打席")
-
+                        sc1, sc2 = st.columns(2); sc1.metric("平均", fmt.format(avg_total)); sc2.metric(label_best, fmt.format(best_total)); st.caption(f"計 {cnt_total} 打席")
                     with sum_c2:
                         st.markdown("<div style='text-align: center; font-weight: bold; color: #2ecc71;'>🟢 0, 1ストライク</div>", unsafe_allow_html=True)
-                        sc3, sc4 = st.columns(2)
-                        sc3.metric("平均", fmt.format(avg_early))
-                        sc4.metric(label_best, fmt.format(best_early))
-                        st.caption(f"計 {cnt_early} 打席")
-
+                        sc3, sc4 = st.columns(2); sc3.metric("平均", fmt.format(avg_early)); sc4.metric(label_best, fmt.format(best_early)); st.caption(f"計 {cnt_early} 打席")
                     with sum_c3:
                         st.markdown("<div style='text-align: center; font-weight: bold; color: #e74c3c;'>🔴 2ストライク</div>", unsafe_allow_html=True)
-                        sc5, sc6 = st.columns(2)
-                        sc5.metric("平均", fmt.format(avg_two))
-                        sc6.metric(label_best, fmt.format(best_two))
-                        st.caption(f"計 {cnt_two} 打席")
+                        sc5, sc6 = st.columns(2); sc5.metric("平均", fmt.format(avg_two)); sc6.metric(label_best, fmt.format(best_two)); st.caption(f"計 {cnt_two} 打席")
 
                     # --- B. ヒートマップ表示 ---
                     st.markdown("---")
@@ -623,7 +612,10 @@ else:
                         vdf_h = final_gdf.dropna(subset=['StrikeZoneX', 'StrikeZoneY', target_metric_h]).copy()
 
                     st.subheader(f"🎯 コース別詳細分析 ({view_mode})")
-                    
+                    inner_side = "右側" if player_hand == "左" else "左側"
+                    outer_side = "左側" if player_hand == "左" else "右側"
+                    st.caption(f"※{player_hand}打者目線: {inner_side}が内角 / {outer_side}が外角")
+
                     if not vdf_h.empty:
                         import plotly.graph_objects as go
                         import numpy as np
@@ -633,9 +625,15 @@ else:
                         grid_val_g = np.zeros((3, 3)); grid_count_g = np.zeros((3, 3))
                         for _, row in vdf_h.iterrows():
                             x, y = row['StrikeZoneX'], row['StrikeZoneY']
-                            if x < SZ_X_TH1: c = 0
-                            elif x <= SZ_X_TH2: c = 1
-                            else: c = 2
+                            
+                            # キャッチャー目線の列判定
+                            if x < SZ_X_TH1: c_raw = 0
+                            elif x <= SZ_X_TH2: c_raw = 1
+                            else: c_raw = 2
+                            
+                            # 反転ロジック
+                            c = (2 - c_raw) if player_hand == "左" else c_raw
+                            
                             if y > SZ_Y_TH2: r = 0
                             elif y > SZ_Y_TH1: r = 1
                             else: r = 2
@@ -648,8 +646,7 @@ else:
                         for r_idx in range(3):
                             for c_idx in range(3):
                                 x0, x1 = SZ_X_MIN + c_idx * w, SZ_X_MIN + (c_idx+1) * w
-                                y1 = SZ_Y_MAX - r_idx * h_grid
-                                y0 = y1 - h_grid
+                                y1 = SZ_Y_MAX - r_idx * h_grid; y0 = y1 - h_grid
                                 v = display_grid_g[r_idx, c_idx]; cnt = int(grid_count_g[r_idx, c_idx])
                                 color, f_color = get_color(v, target_metric_h, row_idx=r_idx)
                                 fig_heat_g.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, fillcolor=color, line=dict(color="#444", width=2))
