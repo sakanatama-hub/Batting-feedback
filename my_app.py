@@ -524,19 +524,25 @@ else:
             with c1:
                 target_game_player = st.selectbox("分析する選手を選択", game_players, key="p_tab4")
             
-            # --- 打ち手の判定（反転ロジック用） ---
+            # 打ち手の判定（反転ロジック用）
             player_hand = PLAYER_HANDS.get(target_game_player, "右")
             st.markdown(f"👤 **{target_game_player}** ({player_hand}打者) の視点で表示中")
             
             gdf = db_game[db_game[game_player_col] == target_game_player].copy()
             
             if not gdf.empty:
-                # 2. 試合種別と対戦相手の選択
-                game_cats = sorted(gdf['試合区別'].dropna().unique().tolist())
+                # 2. 試合種別の選択（「全試合」を追加）
+                game_cats = ["全試合"] + sorted(gdf['試合区別'].dropna().unique().tolist())
                 with c2:
                     selected_cat = st.selectbox("試合種別を選択", game_cats, key="cat_tab4")
                 
-                cat_filtered_df = gdf[gdf['試合区別'] == selected_cat].copy()
+                # 試合種別フィルタリング
+                if selected_cat == "全試合":
+                    cat_filtered_df = gdf.copy()
+                else:
+                    cat_filtered_df = gdf[gdf['試合区別'] == selected_cat].copy()
+
+                # 3. 試合（対戦相手）の選択
                 opponent_col = cat_filtered_df.columns[0]
                 cat_filtered_df['Match_Label'] = cat_filtered_df[opponent_col].astype(str) + " (" + cat_filtered_df['DateTime'].astype(str).str[:10] + ")"
                 
@@ -544,9 +550,10 @@ else:
                 with c3:
                     selected_match = st.selectbox("試合（対戦相手）を選択", match_options, key="match_tab4")
 
+                # 4. データの抽出
                 if selected_match == "全試合合計":
                     final_gdf = cat_filtered_df.copy()
-                    display_title = f"📊 {selected_cat} 全試合合計データ"
+                    display_title = f"📊 {selected_cat} 合計データ"
                 else:
                     final_gdf = cat_filtered_df[cat_filtered_df['Match_Label'] == selected_match].copy()
                     display_title = f"⚡️ {selected_match}"
@@ -562,12 +569,11 @@ else:
                     
                     SMALLER_IS_BETTER = any(k in target_metric_h for k in ["時間", "度", "誤差", "ブレ"])
 
-                    # データの数値化
                     final_gdf[target_metric_h] = pd.to_numeric(final_gdf[target_metric_h], errors='coerce')
                     final_gdf['StrikeZoneX'] = pd.to_numeric(final_gdf['StrikeZoneX'], errors='coerce')
                     final_gdf['StrikeZoneY'] = pd.to_numeric(final_gdf['StrikeZoneY'], errors='coerce')
 
-                    # --- ストライク状況別のデータ抽出 (3列目を参照) ---
+                    # ストライク状況別の抽出
                     strike_col = final_gdf.columns[2]
                     final_gdf[strike_col] = pd.to_numeric(final_gdf[strike_col], errors='coerce')
                     df_early = final_gdf[final_gdf[strike_col] != 2].copy()
@@ -587,7 +593,7 @@ else:
                     fmt = "{:.3f}" if "時間" in target_metric_h else ("{:.2f}" if "手の最大スピード" in target_metric_h else "{:.1f}")
                     label_best = "最小(Best)" if SMALLER_IS_BETTER else "最高(Best)"
 
-                    # --- A. 指標サマリー (3列比較) ---
+                    # --- A. 指標サマリー ---
                     st.markdown(f"##### 📈 ストライク状況別比較 ({target_metric_h})")
                     sum_c1, sum_c2, sum_c3 = st.columns(3)
                     with sum_c1:
@@ -625,15 +631,10 @@ else:
                         grid_val_g = np.zeros((3, 3)); grid_count_g = np.zeros((3, 3))
                         for _, row in vdf_h.iterrows():
                             x, y = row['StrikeZoneX'], row['StrikeZoneY']
-                            
-                            # キャッチャー目線の列判定
                             if x < SZ_X_TH1: c_raw = 0
                             elif x <= SZ_X_TH2: c_raw = 1
                             else: c_raw = 2
-                            
-                            # 反転ロジック
                             c = (2 - c_raw) if player_hand == "左" else c_raw
-                            
                             if y > SZ_Y_TH2: r = 0
                             elif y > SZ_Y_TH1: r = 1
                             else: r = 2
