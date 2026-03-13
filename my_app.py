@@ -531,37 +531,42 @@ else:
             gdf = db_game[db_game[game_player_col] == target_game_player].copy()
             
             if not gdf.empty:
-                # 2. 試合種別の選択（「全試合」を追加）
-                game_cats = ["全試合"] + sorted(gdf['試合区別'].dropna().unique().tolist())
+                # 2. 試合種別の選択（「全試合」を確実にリストの先頭に追加）
+                raw_cats = sorted(gdf['試合区別'].dropna().unique().tolist())
+                game_cats = ["全試合"] + raw_cats  # ここで「全試合」という選択肢を作成
+                
                 with c2:
                     selected_cat = st.selectbox("試合種別を選択", game_cats, key="cat_tab4")
                 
-                # 試合種別フィルタリング
+                # --- 試合種別フィルタリングの修正 ---
                 if selected_cat == "全試合":
-                    cat_filtered_df = gdf.copy()
+                    cat_filtered_df = gdf.copy()  # 試合種別を問わず全データを保持
                 else:
                     cat_filtered_df = gdf[gdf['試合区別'] == selected_cat].copy()
 
                 # 3. 試合（対戦相手）の選択
                 opponent_col = cat_filtered_df.columns[0]
+                # 日付と対戦相手を組み合わせてラベル作成
                 cat_filtered_df['Match_Label'] = cat_filtered_df[opponent_col].astype(str) + " (" + cat_filtered_df['DateTime'].astype(str).str[:10] + ")"
                 
+                # 試合選択肢の作成
                 match_options = ["全試合合計"] + sorted(cat_filtered_df['Match_Label'].unique().tolist(), reverse=True)
                 with c3:
                     selected_match = st.selectbox("試合（対戦相手）を選択", match_options, key="match_tab4")
 
-                # 4. データの抽出
+                # 4. 最終的なデータの抽出
                 if selected_match == "全試合合計":
                     final_gdf = cat_filtered_df.copy()
-                    display_title = f"📊 {selected_cat} 合計データ"
+                    display_title = f"📊 {selected_cat} 合計データ" # 「全試合 合計データ」と表示される
                 else:
                     final_gdf = cat_filtered_df[cat_filtered_df['Match_Label'] == selected_match].copy()
                     display_title = f"⚡️ {selected_match}"
 
+                # --- 以降の統計計算・サマリー・ヒートマップ表示は変更なし ---
                 if not final_gdf.empty:
                     st.markdown(f"### {display_title}")
 
-                    # --- 統計計算準備 ---
+                    # 統計計算準備
                     keywords_h = ["速度", "角度", "効率", "パワー", "時間", "スピード", "飛距離", "度"]
                     valid_metrics_h = [c for c in final_gdf.columns if any(k in str(c) for k in keywords_h)]
                     valid_metrics_h = [c for c in valid_metrics_h if pd.to_numeric(final_gdf[c], errors='coerce').dropna().any()]
@@ -573,7 +578,7 @@ else:
                     final_gdf['StrikeZoneX'] = pd.to_numeric(final_gdf['StrikeZoneX'], errors='coerce')
                     final_gdf['StrikeZoneY'] = pd.to_numeric(final_gdf['StrikeZoneY'], errors='coerce')
 
-                    # ストライク状況別の抽出
+                    # ストライク状況別のデータ抽出
                     strike_col = final_gdf.columns[2]
                     final_gdf[strike_col] = pd.to_numeric(final_gdf[strike_col], errors='coerce')
                     df_early = final_gdf[final_gdf[strike_col] != 2].copy()
@@ -593,7 +598,7 @@ else:
                     fmt = "{:.3f}" if "時間" in target_metric_h else ("{:.2f}" if "手の最大スピード" in target_metric_h else "{:.1f}")
                     label_best = "最小(Best)" if SMALLER_IS_BETTER else "最高(Best)"
 
-                    # --- A. 指標サマリー ---
+                    # A. 指標サマリー
                     st.markdown(f"##### 📈 ストライク状況別比較 ({target_metric_h})")
                     sum_c1, sum_c2, sum_c3 = st.columns(3)
                     with sum_c1:
@@ -606,7 +611,7 @@ else:
                         st.markdown("<div style='text-align: center; font-weight: bold; color: #e74c3c;'>🔴 2ストライク</div>", unsafe_allow_html=True)
                         sc5, sc6 = st.columns(2); sc5.metric("平均", fmt.format(avg_two)); sc6.metric(label_best, fmt.format(best_two)); st.caption(f"計 {cnt_two} 打席")
 
-                    # --- B. ヒートマップ表示 ---
+                    # B. ヒートマップ表示（反転ロジック込み）
                     st.markdown("---")
                     view_mode = st.radio("表示するヒートマップの状況を選択", ["全状況", "0,1ストライク", "2ストライク"], horizontal=True)
                     
