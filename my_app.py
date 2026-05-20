@@ -545,12 +545,15 @@ else:
             gdf = db_game[db_game[game_player_col] == target_game_player].copy()
             
             if not gdf.empty:
-                # ─── 【修正】日付データの型変換と期間選択UIの設置（エラー対策版） ───
-                gdf['DateTime_Parsed'] = pd.to_datetime(gdf['DateTime'], errors='coerce')
+                # ─── 【強化修正】DateTimeから日付文字列（YYYY-MM-DD）のみを抽出してパース ───
+                # time_col のバグで DateTime が壊れていても、先頭の10文字（日付部分）を生かす
+                gdf['Date_Only_Str'] = gdf['DateTime'].astype(str).str.slice(0, 10)
+                gdf['DateTime_Parsed'] = pd.to_datetime(gdf['Date_Only_Str'], format='%Y-%m-%d', errors='coerce')
+                
                 valid_dates = gdf['DateTime_Parsed'].dropna()
                 
                 if valid_dates.empty:
-                    st.error("⚠️ 有効な日付データ（DateTime）が見つかりません。データの形式を確認してください。")
+                    st.error("⚠️ データの「DateTime」列から日付を読み取れませんでした。Excelデータ自体の1列目（時間列など）が空欄になっていないか確認してください。")
                 else:
                     min_date = valid_dates.min().date()
                     max_date = valid_dates.max().date()
