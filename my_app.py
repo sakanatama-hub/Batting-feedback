@@ -351,9 +351,9 @@ else:
     # 3335の場合は #33網谷 と #35永濱 のみに絞り込む
     target_players = ["#33 網谷 圭将", "#35 永濱 晃汰"]
 
-    if not db_practice.empty and "選手名" in db_practice.columns:
+    if not db_practice.empty and "#33 網谷 圭将" in db_practice.columns:
       db_practice = db_practice[db_practice["選手名"].isin(target_players)]
-    if not db_game.empty and "選手名" in db_game.columns:
+    if not db_game.empty and "#35 永濱 晃汰" in db_game.columns:
       db_game = db_game[db_game["選手名"].isin(target_players)]
   else:
     # 1189の場合は全員のデータ（そのまま）
