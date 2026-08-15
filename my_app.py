@@ -370,7 +370,7 @@ else:
   # 5. 各タブの中身
   with tab1:
     st.title("🔵 個人別打撃分析")
-      if not db_df.empty:
+    if not db_df.empty:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
             cond_col = 'スイング条件' if 'スイング条件' in db_df.columns else 'スイング条件_str'
             db_df[cond_col] = db_df[cond_col].fillna("未設定").astype(str).str.strip()
