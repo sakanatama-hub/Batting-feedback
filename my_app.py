@@ -194,6 +194,7 @@ def sort_players_by_number(player_list):
         match = re.search(r'#(\d+)', s)
         return int(match.group(1)) if match else 999
     return sorted(player_list, key=extract_num)
+
 # --- アプリケーション本体 ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
 
@@ -206,9 +207,10 @@ if not st.session_state["ok"]:
   st.title("⚾️ TOYOTA BASEBALL CLUB")
   val = st.text_input("PASSWORD", type="password")
   if st.button("LOGIN"):
+    # 1189 または 3335 のいずれかであればログイン許可
     if val in ["1189", "3335"]:
       st.session_state["ok"] = True
-      st.session_state["password"] = val
+      st.session_state["password"] = val  # 入力されたパスワードを保存
       st.rerun()
     else:
       st.error("パスワードが正しくありません")
@@ -217,12 +219,13 @@ else:
   # ログイン後のパスワード（"1189" または "3335"）を取得
   current_pw = st.session_state["password"]
 
-  # 1. データの読み込み
+  # 1. データの読み込み（練習と試合を完全に分離）
   db_practice = load_data_from_github(GITHUB_FILE_PATH)  # 練習データ
   db_game = load_data_from_github(GITHUB_GAME_FILE_PATH)  # 試合データ
 
-  # 2. パスワードに応じてデータを絞り込む
+  # 2. パスワードに応じたデータの絞り込み
   if current_pw == "3335":
+    # 3335の場合は #33網谷 と #35永濱 のみに絞り込む
     target_players = ["#33 網谷 圭将", "#35 永濱 晃汰"]
 
     if not db_practice.empty and "選手名" in db_practice.columns:
@@ -233,7 +236,7 @@ else:
     # 1189の場合は全員のデータ（そのまま）
     pass
 
-  # 3. メイン変数の設定
+  # 3. タブ1・2（練習分析）で使うメイン変数を設定
   db_df = db_practice.copy() if not db_practice.empty else pd.DataFrame()
 
   # 4. タブの定義
