@@ -217,36 +217,30 @@ else:
   # ログイン後のパスワード（"1189" または "3335"）を取得
   current_pw = st.session_state["password"]
 
-  # ==========================================
-  # 1. まず最初にデータを読み込む
-  # ==========================================
+  # 1. データの読み込み
   db_practice = load_data_from_github(GITHUB_FILE_PATH)  # 練習データ
   db_game = load_data_from_github(GITHUB_GAME_FILE_PATH)  # 試合データ
 
-  # ==========================================
   # 2. パスワードに応じてデータを絞り込む
-  # ==========================================
   if current_pw == "3335":
     target_players = ["#33 網谷 圭将", "#35 永濱 晃汰"]
 
-    # 練習データと試合データの両方を絞り込む（「選手名」の列名は実際のデータに合わせてください）
     if not db_practice.empty and "選手名" in db_practice.columns:
       db_practice = db_practice[db_practice["選手名"].isin(target_players)]
     if not db_game.empty and "選手名" in db_game.columns:
       db_game = db_game[db_game["選手名"].isin(target_players)]
   else:
-    # 1189の場合は全員のデータ（そのまま何もしない）
+    # 1189の場合は全員のデータ（そのまま）
     pass
 
-  # ==========================================
-  # 3. 以降の処理（タブの定義など）
-  # ==========================================
+  # 3. メイン変数の設定
   db_df = db_practice.copy() if not db_practice.empty else pd.DataFrame()
 
-  # タブの定義
+  # 4. タブの定義
   tab1, tab2, tab3, tab4 = st.tabs(
       ["👤 個人分析", "⚔️ 比較分析", "📝 データ登録", "🏟️ 試合分析"]
   )
+    
     # --- 以下、各タブの中身が続く ---
 
     with tab1:
