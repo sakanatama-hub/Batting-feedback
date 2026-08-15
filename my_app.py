@@ -206,10 +206,9 @@ if not st.session_state["ok"]:
   st.title("⚾️ TOYOTA BASEBALL CLUB")
   val = st.text_input("PASSWORD", type="password")
   if st.button("LOGIN"):
-    # 1189 または 3335 のいずれかであればログイン許可
     if val in ["1189", "3335"]:
       st.session_state["ok"] = True
-      st.session_state["password"] = val  # 入力されたパスワードを保存
+      st.session_state["password"] = val
       st.rerun()
     else:
       st.error("パスワードが正しくありません")
@@ -218,26 +217,36 @@ else:
   # ログイン後のパスワード（"1189" または "3335"）を取得
   current_pw = st.session_state["password"]
 
-  # --- データ読み込みや選手選択などの手前（またはデータフレーム作成後）でフィルタリングを行う例 ---
-  # ※ df に全データのデータフレームが入っている前提のサンプルです
+  # ==========================================
+  # 1. まず最初にデータを読み込む
+  # ==========================================
+  db_practice = load_data_from_github(GITHUB_FILE_PATH)  # 練習データ
+  db_game = load_data_from_github(GITHUB_GAME_FILE_PATH)  # 試合データ
+
+  # ==========================================
+  # 2. パスワードに応じてデータを絞り込む
+  # ==========================================
   if current_pw == "3335":
-    # 3335の場合は #33網谷 と #35永濱 のみに絞り込む
-    # ※ 実際のデータフレームの選手名やカラム名に合わせて調整してください
-    target_players = ["#33 網谷 圭将", "#35 永濱　晃汰"]
-    # 例: df = df[df["選手名"].isin(target_players)]
+    target_players = ["#33 網谷 圭将", "#35 永濱 晃汰"]
+
+    # 練習データと試合データの両方を絞り込む（「選手名」の列名は実際のデータに合わせてください）
+    if not db_practice.empty and "選手名" in db_practice.columns:
+      db_practice = db_practice[db_practice["選手名"].isin(target_players)]
+    if not db_game.empty and "選手名" in db_game.columns:
+      db_game = db_game[db_game["選手名"].isin(target_players)]
   else:
-    # 1189の場合は全員のデータ（そのまま）
+    # 1189の場合は全員のデータ（そのまま何もしない）
     pass
-    # 1. データの読み込み（練習と試合を完全に分離）
-    db_practice = load_data_from_github(GITHUB_FILE_PATH)      # 練習データ
-    db_game = load_data_from_github(GITHUB_GAME_FILE_PATH)     # 試合データ
 
-    # 2. タブ1・2（練習分析）で使うメイン変数を「練習データのみ」に設定
-    db_df = db_practice.copy() if not db_practice.empty else pd.DataFrame()
+  # ==========================================
+  # 3. 以降の処理（タブの定義など）
+  # ==========================================
+  db_df = db_practice.copy() if not db_practice.empty else pd.DataFrame()
 
-    # 3. タブの定義（ここが抜けているか、順番が違うとエラーになります）
-    tab1, tab2, tab3, tab4 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録", "🏟️ 試合分析"])
-
+  # タブの定義
+  tab1, tab2, tab3, tab4 = st.tabs(
+      ["👤 個人分析", "⚔️ 比較分析", "📝 データ登録", "🏟️ 試合分析"]
+  )
     # --- 以下、各タブの中身が続く ---
 
     with tab1:
