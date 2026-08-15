@@ -356,8 +356,8 @@ else:
         if player_col in db_practice.columns:
             db_practice = db_practice[db_practice[player_col].isin(target_players)]
 
-      # 試合データの絞り込み
-      if not db_game.empty:
+    # 試合データの絞り込み
+    if not db_game.empty:
           player_col_game = "Player Name" if "Player Name" in db_game.columns else "選手名"
           if player_col_game in db_game.columns:
               db_game = db_game[db_game[player_col_game].isin(target_players)]
