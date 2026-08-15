@@ -1,18 +1,18 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import datetime
-import requests
 import base64
+import datetime
 import re  # 背番号抽出用
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import requests
+import streamlit as st
 
 # --- 基本設定 ---
-PW = "1189" 
+PW = "1189"
 GITHUB_USER = "sakanatama-hub"
 GITHUB_REPO = "Batting-feedback"
 GITHUB_FILE_PATH = "data.csv"
-GITHUB_GAME_FILE_PATH = "game_data.csv" # 追加：試合用パス
+GITHUB_GAME_FILE_PATH = "game_data.csv"  # 追加：試合用パス
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 
 # --- ストライクゾーン定義 (cm) ---
@@ -21,179 +21,302 @@ SZ_X_TH1, SZ_X_TH2 = -9.6, 9.6
 SZ_Y_MIN, SZ_Y_MAX = 45.0, 110.0
 SZ_Y_TH1, SZ_Y_TH2 = 66.6, 88.3
 
-PLAYER_HANDS = {"#1 熊田 任洋": "左", "#2 逢澤 崚介": "左", "#3 三塚 武蔵": "左", "#4 北村 祥治": "右", "#5 前田 健伸": "左", "#6 佐藤 勇基": "右", "#7 西村 友哉": "右", "#8 和田 佳大": "左", "#9 今泉 颯太": "右", "#10 福井 章吾": "左", "#22 高祖 健輔": "左", "#23 箱山 遥人": "右", "#24 坂巻 尚哉": "右", "#26 西村 彰浩": "左", "#27 小畑 尋規": "右", "#28 宮崎 仁斗": "右", "#29 徳本 健太朗": "左", "#39 柳 元珍": "左", "#99 尾瀬 雄大": "左", "#33 網谷 圭将": "右", "#35 永濱 晃汰": "左"}
+PLAYER_HANDS = {
+    "#1 熊田 任洋": "左",
+    "#2 逢澤 崚介": "左",
+    "#3 三塚 武蔵": "左",
+    "#4 北村 祥治": "右",
+    "#5 前田 健伸": "左",
+    "#6 佐藤 勇基": "右",
+    "#7 西村 友哉": "右",
+    "#8 和田 佳大": "左",
+    "#9 今泉 颯太": "右",
+    "#10 福井 章吾": "左",
+    "#22 高祖 健輔": "左",
+    "#23 箱山 遥人": "右",
+    "#24 坂巻 尚哉": "右",
+    "#26 西村 彰浩": "左",
+    "#27 小畑 尋規": "右",
+    "#28 宮崎 仁斗": "右",
+    "#29 徳本 健太朗": "左",
+    "#39 柳 元珍": "左",
+    "#99 尾瀬 雄大": "左",
+    "#33 網谷 圭将": "右",
+    "#35 永濱 晃汰": "左",
+}
 PLAYERS = list(PLAYER_HANDS.keys())
+
 
 # --- 追加：コース文字列を座標に変換する関数 ---
 def convert_course_to_coord(course_str):
-    if pd.isna(course_str):
-        return None, None
-    course_str = str(course_str)
-    
-    # 横位置(X)の判定
-    x = 0
-    if "内" in course_str:
-        x = -19.2  # SZ_X_TH1より外側（インコース）
-    elif "外" in course_str:
-        x = 19.2   # SZ_X_TH2より外側（アウトコース）
-    else:
-        x = 0      # 真ん中
-        
-    # 高さ(Y)の判定
-    y = 77.5   # 真ん中の高さ（デフォルト）
-    if "高め" in course_str:
-        y = 99.1  # SZ_Y_TH2より上
-    elif "低め" in course_str:
-        y = 55.8  # SZ_Y_TH1より下
-        
-    return x, y
+  if pd.isna(course_str):
+    return None, None
+  course_str = str(course_str)
+
+  # 横位置(X)の判定
+  x = 0
+  if "内" in course_str:
+    x = -19.2  # SZ_X_TH1より外側（インコース）
+  elif "外" in course_str:
+    x = 19.2  # SZ_X_TH2より外側（アウトコース）
+  else:
+    x = 0  # 真ん中
+
+  # 高さ(Y)の判定
+  y = 77.5  # 真ん中の高さ（デフォルト）
+  if "高め" in course_str:
+    y = 99.1  # SZ_Y_TH2より上
+  elif "低め" in course_str:
+    y = 55.8  # SZ_Y_TH1より下
+
+  return x, y
+
 
 # --- GitHub連携関数 (引数にpathを追加) ---
 def load_data_from_github(path):
-    url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{path}?nocache={datetime.datetime.now().timestamp()}"
-    try:
-        df = pd.read_csv(url, dtype=str)
-        df.columns = df.columns.str.strip()
-        return df
-    except:
-        return pd.DataFrame()
+  url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/main/{path}?nocache={datetime.datetime.now().timestamp()}"
+  try:
+    df = pd.read_csv(url, dtype=str)
+    df.columns = df.columns.str.strip()
+    return df
+  except:
+    return pd.DataFrame()
+
 
 def save_to_github(new_df, path):
-    url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{path}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    res = requests.get(url, headers=headers)
-    sha = res.json().get("sha") if res.status_code == 200 else None
-    save_df = new_df.copy()
-    for col in save_df.columns:
-        save_df[col] = save_df[col].astype(str).replace('nan', '').replace('NaT', '')
-    csv_content = save_df.to_csv(index=False)
-    b64_content = base64.b64encode(csv_content.encode('utf-8-sig')).decode()
-    data = {"message": f"Update data {datetime.datetime.now()}", "content": b64_content}
-    if sha:
-        data["sha"] = sha
-    put_res = requests.put(url, headers=headers, json=data)
-    return (True, "成功") if put_res.status_code in [200, 201] else (False, f"エラー {put_res.status_code}")
+  url = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{path}"
+  headers = {
+      "Authorization": f"token {GITHUB_TOKEN}",
+      "Accept": "application/vnd.github.v3+json",
+  }
+  res = requests.get(url, headers=headers)
+  sha = res.json().get("sha") if res.status_code == 200 else None
+  save_df = new_df.copy()
+  for col in save_df.columns:
+    save_df[col] = (
+        save_df[col].astype(str).replace("nan", "").replace("NaT", "")
+    )
+  csv_content = save_df.to_csv(index=False)
+  b64_content = base64.b64encode(csv_content.encode("utf-8-sig")).decode()
+  data = {
+      "message": f"Update data {datetime.datetime.now()}",
+      "content": b64_content,
+  }
+  if sha:
+    data["sha"] = sha
+  put_res = requests.put(url, headers=headers, json=data)
+  return (
+      (True, "成功")
+      if put_res.status_code in [200, 201]
+      else (False, f"エラー {put_res.status_code}")
+  )
+
 
 # --- 共通ユーティリティ (色定義) ---
 def get_color(val, metric_name, row_idx=None, eff_val=None):
-    if val == 0 or pd.isna(val):
-        return "rgba(255, 255, 255, 0.1)", "white"
-    
-    white_metrics = ["バット角度", "バットの角度", "打球方向", "飛距離"]
-    if any(m in metric_name for m in white_metrics):
-        return "#FFFFFF", "black"
+  if val == 0 or pd.isna(val):
+    return "rgba(255, 255, 255, 0.1)", "white"
 
-    if "打球角度" in metric_name:
-        center = 15.0
-        if 8.0 <= val <= 22.0:
-            dist = abs(val - center)
-            intensity = 1.0 - (dist / 7.0) 
-            gb_val = int(255 * (1 - intensity))
-            return f"rgba(255, {gb_val}, {gb_val}, 0.9)", "white" if intensity > 0.5 else "black"
-        elif val < 8.0:
-            dist = min(abs(8.0 - val), 15.0)
-            intensity = dist / 15.0
-            rb_val = int(255 * (1 - intensity))
-            return f"rgba({rb_val}, 255, {rb_val}, 0.9)", "black"
-        else:
-            dist = min(abs(val - 22.0), 15.0)
-            intensity = dist / 15.0
-            rg_val = int(255 * (1 - intensity))
-            return f"rgba({rg_val}, {rg_val}, 255, 0.9)", "white" if intensity > 0.5 else "black"
+  white_metrics = ["バット角度", "バットの角度", "打球方向", "飛距離"]
+  if any(m in metric_name for m in white_metrics):
+    return "#FFFFFF", "black"
 
-    if "打球速度" in metric_name:
-        if val < 140: return "rgba(0, 0, 255, 0.9)", "white"
-        elif 140 <= val < 145: return "rgba(173, 216, 230, 0.9)", "black"
-        elif 145 <= val <= 152: return "rgba(255, 255, 255, 0.9)", "black"
-        elif 153 <= val <= 160: return "rgba(255, 182, 193, 0.9)", "black"
-        else: return "rgba(255, 0, 0, 0.9)", "white"
+  if "打球角度" in metric_name:
+    center = 15.0
+    if 8.0 <= val <= 22.0:
+      dist = abs(val - center)
+      intensity = 1.0 - (dist / 7.0)
+      gb_val = int(255 * (1 - intensity))
+      return (
+          f"rgba(255, {gb_val}, {gb_val}, 0.9)",
+          "white" if intensity > 0.5 else "black",
+      )
+    elif val < 8.0:
+      dist = min(abs(8.0 - val), 15.0)
+      intensity = dist / 15.0
+      rb_val = int(255 * (1 - intensity))
+      return f"rgba({rb_val}, 255, {rb_val}, 0.9)", "black"
+    else:
+      dist = min(abs(val - 22.0), 15.0)
+      intensity = dist / 15.0
+      rg_val = int(255 * (1 - intensity))
+      return (
+          f"rgba({rg_val}, {rg_val}, 255, 0.9)",
+          "white" if intensity > 0.5 else "black",
+      )
 
-    if "手の最大スピード" in metric_name:
-        eff = eff_val if eff_val is not None else val
-        if eff < 2.7: return "rgba(0, 128, 0, 0.9)", "white"
-        elif eff < 3.0: return "rgba(144, 238, 144, 0.9)", "black"
-        elif 3.0 <= eff <= 3.2:
-            dist = abs(eff - 3.1)
-            intensity = 1.0 - (dist / 0.1) if dist <= 0.1 else 0.0
-            gb_val = int(255 * (1 - intensity))
-            return f"rgba(255, {gb_val}, {gb_val}, 0.9)", "white" if intensity > 0.5 else "black"
-        elif eff <= 3.4: return "rgba(173, 216, 230, 0.9)", "black"
-        else: return "rgba(0, 0, 255, 0.9)", "white"
+  if "打球速度" in metric_name:
+    if val < 140:
+      return "rgba(0, 0, 255, 0.9)", "white"
+    elif 140 <= val < 145:
+      return "rgba(173, 216, 230, 0.9)", "black"
+    elif 145 <= val <= 152:
+      return "rgba(255, 255, 255, 0.9)", "black"
+    elif 153 <= val <= 160:
+      return "rgba(255, 182, 193, 0.9)", "black"
+    else:
+      return "rgba(255, 0, 0, 0.9)", "white"
 
-    if "パワー" in metric_name:
-        if val < 3: return "rgba(0, 0, 255, 0.9)", "white"
-        elif val <= 3.5: return "rgba(173, 216, 230, 0.9)", "black"
-        elif val <= 4: return "rgba(255, 255, 255, 0.9)", "black"
-        elif val <= 4.5: return "rgba(255, 182, 193, 0.9)", "black"
-        else: return "rgba(255, 0, 0, 0.9)", "white"
+  if "手の最大スピード" in metric_name:
+    eff = eff_val if eff_val is not None else val
+    if eff < 2.7:
+      return "rgba(0, 128, 0, 0.9)", "white"
+    elif eff < 3.0:
+      return "rgba(144, 238, 144, 0.9)", "black"
+    elif 3.0 <= eff <= 3.2:
+      dist = abs(eff - 3.1)
+      intensity = 1.0 - (dist / 0.1) if dist <= 0.1 else 0.0
+      gb_val = int(255 * (1 - intensity))
+      return (
+          f"rgba(255, {gb_val}, {gb_val}, 0.9)",
+          "white" if intensity > 0.5 else "black",
+      )
+    elif eff <= 3.4:
+      return "rgba(173, 216, 230, 0.9)", "black"
+    else:
+      return "rgba(0, 0, 255, 0.9)", "white"
 
-    if "体の回転によるバットの加速の大きさ" in metric_name:
-        if val <= 5: return "rgba(0, 0, 255, 0.9)", "white"
-        elif val <= 10: return "rgba(173, 216, 230, 0.9)", "black"
-        elif val <= 14: return "rgba(255, 255, 255, 0.9)", "black"
-        elif val <= 20: return "rgba(255, 182, 193, 0.9)", "black"
-        else: return "rgba(255, 0, 0, 0.9)", "white"
+  if "パワー" in metric_name:
+    if val < 3:
+      return "rgba(0, 0, 255, 0.9)", "white"
+    elif val <= 3.5:
+      return "rgba(173, 216, 230, 0.9)", "black"
+    elif val <= 4:
+      return "rgba(255, 255, 255, 0.9)", "black"
+    elif val <= 4.5:
+      return "rgba(255, 182, 193, 0.9)", "black"
+    else:
+      return "rgba(255, 0, 0, 0.9)", "white"
 
-    if "アッパースイング度" in metric_name and row_idx is not None:
-        if row_idx == 0: base, low, high = 6.5, 3.0, 10.0
-        elif row_idx == 1: base, low, high = 11.5, 8.0, 15.0
-        else: base, low, high = 15.0, 10.0, 20.0
-        if low <= val <= high:
-            intensity = 1.0 - (abs(val - base) / ((high - low) / 2))
-            return f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)", "black"
-        elif val < low:
-            intensity = min((low - val) / 15.0, 1.0)
-            return f"rgba({int(255*(1-intensity))}, 255, {int(255*(1-intensity))}, 0.9)", "black"
-        else:
-            intensity = min((val - high) / 15.0, 1.0)
-            return f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)", "black"
+  if "体の回転によるバットの加速の大きさ" in metric_name:
+    if val <= 5:
+      return "rgba(0, 0, 255, 0.9)", "white"
+    elif val <= 10:
+      return "rgba(173, 216, 230, 0.9)", "black"
+    elif val <= 14:
+      return "rgba(255, 255, 255, 0.9)", "black"
+    elif val <= 20:
+      return "rgba(255, 182, 193, 0.9)", "black"
+    else:
+      return "rgba(255, 0, 0, 0.9)", "white"
 
-    if "バットスピード" in metric_name:
-        if val < 100: return "rgba(0, 0, 255, 0.9)", "white"
-        elif 100 <= val <= 110: return "rgba(255, 255, 255, 0.9)", "black"
-        elif 110 < val < 120:
-            intensity = (val - 110) / 10
-            gb_val = int(255 * (1 - intensity))
-            return f"rgba(255, {gb_val}, {gb_val}, 0.9)", "black" if intensity < 0.6 else "white"
-        else: return "rgba(255, 0, 0, 0.9)", "white"
+  if "アッパースイング度" in metric_name and row_idx is not None:
+    if row_idx == 0:
+      base, low, high = 6.5, 3.0, 10.0
+    elif row_idx == 1:
+      base, low, high = 11.5, 8.0, 15.0
+    else:
+      base, low, high = 15.0, 10.0, 20.0
+    if low <= val <= high:
+      intensity = 1.0 - (abs(val - base) / ((high - low) / 2))
+      return (
+          f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)",
+          "black",
+      )
+    elif val < low:
+      intensity = min((low - val) / 15.0, 1.0)
+      return (
+          f"rgba({int(255*(1-intensity))}, 255, {int(255*(1-intensity))}, 0.9)",
+          "black",
+      )
+    else:
+      intensity = min((val - high) / 15.0, 1.0)
+      return (
+          f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)",
+          "black",
+      )
 
-    if "スイング時間" in metric_name:
-        if val < 0.14: return "rgba(255, 0, 0, 0.9)", "white"
-        elif 0.14 <= val < 0.15: return "rgba(255, 180, 180, 0.9)", "black"
-        elif 0.15 <= val < 0.16: return "rgba(255, 255, 255, 0.9)", "black"
-        elif 0.16 <= val < 0.17: return "rgba(180, 180, 255, 0.9)", "black"
-        else: return "rgba(0, 0, 255, 0.9)", "white"
+  if "バットスピード" in metric_name:
+    if val < 100:
+      return "rgba(0, 0, 255, 0.9)", "white"
+    elif 100 <= val <= 110:
+      return "rgba(255, 255, 255, 0.9)", "black"
+    elif 110 < val < 120:
+      intensity = (val - 110) / 10
+      gb_val = int(255 * (1 - intensity))
+      return (
+          f"rgba(255, {gb_val}, {gb_val}, 0.9)",
+          "black" if intensity < 0.6 else "white",
+      )
+    else:
+      return "rgba(255, 0, 0, 0.9)", "white"
 
-    base, sensitivity = 105, 30
-    diff = val - base
-    intensity = min(abs(diff) / sensitivity, 1.0)
-    color = f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)" if diff > 0 else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
-    f_color = "black" if intensity < 0.4 else "white"
-    return color, f_color
+  if "スイング時間" in metric_name:
+    if val < 0.14:
+      return "rgba(255, 0, 0, 0.9)", "white"
+    elif 0.14 <= val < 0.15:
+      return "rgba(255, 180, 180, 0.9)", "black"
+    elif 0.15 <= val < 0.16:
+      return "rgba(255, 255, 255, 0.9)", "black"
+    elif 0.16 <= val < 0.17:
+      return "rgba(180, 180, 255, 0.9)", "black"
+    else:
+      return "rgba(0, 0, 255, 0.9)", "white"
+
+  base, sensitivity = 105, 30
+  diff = val - base
+  intensity = min(abs(diff) / sensitivity, 1.0)
+  color = (
+      f"rgba(255, {int(255*(1-intensity))}, {int(255*(1-intensity))}, 0.9)"
+      if diff > 0
+      else f"rgba({int(255*(1-intensity))}, {int(255*(1-intensity))}, 255, 0.9)"
+  )
+  f_color = "black" if intensity < 0.4 else "white"
+  return color, f_color
+
 
 def get_3x3_grid(df, metric):
-    grid = np.zeros((3, 3)); counts = np.zeros((3, 3)); eff_grid = np.zeros((3, 3))
-    if metric not in df.columns: return grid, None
-    df_c = df.copy()
-    df_c['StrikeZoneX'] = pd.to_numeric(df_c['StrikeZoneX'], errors='coerce')
-    df_c['StrikeZoneY'] = pd.to_numeric(df_c['StrikeZoneY'], errors='coerce')
-    is_hand = "手の最大スピード" in metric and "バットスピード (km/h)" in df_c.columns
-    df_c[metric] = pd.to_numeric(df_c[metric], errors='coerce')
-    if is_hand: df_c['eff_calc'] = pd.to_numeric(df_c['バットスピード (km/h)'], errors='coerce') / df_c[metric]
-    valid = df_c.dropna(subset=['StrikeZoneX', 'StrikeZoneY', metric])
-    for _, row in valid.iterrows():
-        c = 0 if row['StrikeZoneX'] < SZ_X_TH1 else 1 if row['StrikeZoneX'] <= SZ_X_TH2 else 2
-        r = 0 if row['StrikeZoneY'] > SZ_Y_TH2 else 1 if row['StrikeZoneY'] > SZ_Y_TH1 else 2
-        grid[r, c] += row[metric]; counts[r, c] += 1
-        if is_hand: eff_grid[r, c] += row['eff_calc']
-    return np.where(counts > 0, grid / counts, 0), (np.where(counts > 0, eff_grid / counts, 0) if is_hand else None)
+  grid = np.zeros((3, 3))
+  counts = np.zeros((3, 3))
+  eff_grid = np.zeros((3, 3))
+  if metric not in df.columns:
+    return grid, None
+  df_c = df.copy()
+  df_c["StrikeZoneX"] = pd.to_numeric(df_c["StrikeZoneX"], errors="coerce")
+  df_c["StrikeZoneY"] = pd.to_numeric(df_c["StrikeZoneY"], errors="coerce")
+  is_hand = (
+      "手の最大スピード" in metric and "バットスピード (km/h)" in df_c.columns
+  )
+  df_c[metric] = pd.to_numeric(df_c[metric], errors="coerce")
+  if is_hand:
+    df_c["eff_calc"] = (
+        pd.to_numeric(df_c["バットスピード (km/h)"], errors="coerce")
+        / df_c[metric]
+    )
+  valid = df_c.dropna(subset=["StrikeZoneX", "StrikeZoneY", metric])
+  for _, row in valid.iterrows():
+    c = (
+        0
+        if row["StrikeZoneX"] < SZ_X_TH1
+        else 1
+        if row["StrikeZoneX"] <= SZ_X_TH2
+        else 2
+    )
+    r = (
+        0
+        if row["StrikeZoneY"] > SZ_Y_TH2
+        else 1
+        if row["StrikeZoneY"] > SZ_Y_TH1
+        else 2
+    )
+    grid[r, c] += row[metric]
+    counts[r, c] += 1
+    if is_hand:
+      eff_grid[r, c] += row["eff_calc"]
+  return (
+      np.where(counts > 0, grid / counts, 0),
+      (np.where(counts > 0, eff_grid / counts, 0) if is_hand else None),
+  )
+
 
 # --- 背番号ソート用関数 ---
 def sort_players_by_number(player_list):
-    def extract_num(s):
-        match = re.search(r'#(\d+)', s)
-        return int(match.group(1)) if match else 999
-    return sorted(player_list, key=extract_num)
+  def extract_num(s):
+    match = re.search(r"#(\d+)", s)
+    return int(match.group(1)) if match else 999
+
+  return sorted(player_list, key=extract_num)
+
 
 # --- アプリケーション本体 ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
@@ -240,12 +363,14 @@ else:
   db_df = db_practice.copy() if not db_practice.empty else pd.DataFrame()
 
   # 4. タブの定義
-  tab1, tab2, tab3, tab4 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録", "🏟️ 試合分析"])
-    
-    # --- 以下、各タブの中身が続く ---
-    with tab1:
-        st.title("🔵 個人別打撃分析")
-        if not db_df.empty:
+  tab1, tab2, tab3, tab4 = st.tabs(
+      ["👤 個人分析", "⚔️ 比較分析", "📝 データ登録", "🏟️ 試合分析"]
+  )
+
+  # 5. 各タブの中身
+  with tab1:
+    st.title("🔵 個人別打撃分析")
+      if not db_df.empty:
             player_col = 'Player Name' if 'Player Name' in db_df.columns else db_df.columns[-1]
             cond_col = 'スイング条件' if 'スイング条件' in db_df.columns else 'スイング条件_str'
             db_df[cond_col] = db_df[cond_col].fillna("未設定").astype(str).str.strip()
