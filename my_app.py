@@ -240,9 +240,7 @@ else:
   db_df = db_practice.copy() if not db_practice.empty else pd.DataFrame()
 
   # 4. タブの定義
-  tab1, tab2, tab3, tab4 = st.tabs(
-      ["👤 個人分析", "⚔️ 比較分析", "📝 データ登録", "🏟️ 試合分析"]
-  )
+  tab1, tab2, tab3, tab4 = st.tabs(["👤 個人分析", "⚔️ 比較分析", "📝 データ登録", "🏟️ 試合分析"])
     
     # --- 以下、各タブの中身が続く ---
 
