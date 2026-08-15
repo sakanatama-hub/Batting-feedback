@@ -194,21 +194,40 @@ def sort_players_by_number(player_list):
         match = re.search(r'#(\d+)', s)
         return int(match.group(1)) if match else 999
     return sorted(player_list, key=extract_num)
-
 # --- アプリケーション本体 ---
 st.set_page_config(page_title="TOYOTA BASEBALL", layout="wide")
-if "ok" not in st.session_state: 
-    st.session_state["ok"] = False
+
+if "ok" not in st.session_state:
+  st.session_state["ok"] = False
+if "password" not in st.session_state:
+  st.session_state["password"] = ""
 
 if not st.session_state["ok"]:
-    st.title("⚾️ TOYOTA BASEBALL CLUB")
-    val = st.text_input("PASSWORD", type="password")
-    if st.button("LOGIN"):
-        if val == PW: 
-            st.session_state["ok"] = True
-            st.rerun()
-            
+  st.title("⚾️ TOYOTA BASEBALL CLUB")
+  val = st.text_input("PASSWORD", type="password")
+  if st.button("LOGIN"):
+    # 1189 または 3335 のいずれかであればログイン許可
+    if val in ["1189", "3335"]:
+      st.session_state["ok"] = True
+      st.session_state["password"] = val  # 入力されたパスワードを保存
+      st.rerun()
+    else:
+      st.error("パスワードが正しくありません")
+
 else:
+  # ログイン後のパスワード（"1189" または "3335"）を取得
+  current_pw = st.session_state["password"]
+
+  # --- データ読み込みや選手選択などの手前（またはデータフレーム作成後）でフィルタリングを行う例 ---
+  # ※ df に全データのデータフレームが入っている前提のサンプルです
+  if current_pw == "3335":
+    # 3335の場合は #33網谷 と #35永濱 のみに絞り込む
+    # ※ 実際のデータフレームの選手名やカラム名に合わせて調整してください
+    target_players = ["#33 網谷", "#35 永濱"]
+    # 例: df = df[df["選手名"].isin(target_players)]
+  else:
+    # 1189の場合は全員のデータ（そのまま）
+    pass
     # 1. データの読み込み（練習と試合を完全に分離）
     db_practice = load_data_from_github(GITHUB_FILE_PATH)      # 練習データ
     db_game = load_data_from_github(GITHUB_GAME_FILE_PATH)     # 試合データ
