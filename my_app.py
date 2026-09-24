@@ -93,13 +93,12 @@ def create_fallback_knn_model():
   return knn
 
 
-# --- MLモデル (xwOBA / xBA) 読み込み（自動学習・フォールバック機能付き） ---
+# --- MLモデル (xwOBA / xBA) 読み込み ---
 @st.cache_resource
 def load_knn_model():
   model = None
   loaded_from_pkl = False
 
-  # 1. pkl ファイルからのロードを試みる
   try:
     model = joblib.load("xwoba_knn_model.pkl")
     if is_model_fitted(model):
@@ -107,7 +106,6 @@ def load_knn_model():
   except Exception:
     model = None
 
-  # 2. pkl が未学習または読み込めない場合、自動で学習済みモデルを作成
   if not loaded_from_pkl or not is_model_fitted(model):
     model = create_fallback_knn_model()
 
@@ -159,7 +157,6 @@ def calculate_xwoba_xba_df(df, model):
     df["xBA"] = np.nan
     return df
 
-  # 単位の文字("km/h"等)が含まれていた場合を除去して数値化
   speed_raw = (
       df[speed_col]
       .astype(str)
@@ -178,14 +175,12 @@ def calculate_xwoba_xba_df(df, model):
   xba_list = [np.nan] * len(df)
 
   if valid_mask.any():
-    # km/h を mph に変換 (1 km/h ≒ 0.621371 mph)
     speed_mph = speed_kph[valid_mask].values * 0.621371
     angle_vals = angle[valid_mask].values
 
     features = np.column_stack((speed_mph, angle_vals))
 
     try:
-      # 確率予測 (predict_proba)
       probs = model.predict_proba(features)
       classes = list(model.classes_)
 
@@ -200,7 +195,6 @@ def calculate_xwoba_xba_df(df, model):
       p_3B = get_class_prob(["3B", "triple"])
       p_HR = get_class_prob(["HR", "home_run"])
 
-      # wOBA重み
       W_1B, W_2B, W_3B, W_HR = 0.88, 1.25, 1.58, 2.05
 
       xba_preds = p_1B + p_2B + p_3B + p_HR
@@ -574,7 +568,7 @@ else:
 
       pdf = db_df[db_df[player_col] == target_player].copy()
       if not pdf.empty:
-        # xwOBA / xBA の計算を実行してDFに追加（km/h -> mph 変換内蔵）
+        # xwOBA / xBA の計算を実行してDFに追加
         pdf = calculate_xwoba_xba_df(pdf, knn_model)
 
         pdf["Date_Only_Str"] = pdf["DateTime"].astype(str).str.extract(
@@ -875,6 +869,153 @@ else:
               margin=dict(l=0, r=0, t=10, b=0),
           )
           st.plotly_chart(fig_heat, use_container_width=True)
+
+          # ---------------------------------------------------------
+          # 【新機能】📐 打球角度別 xBA (予測安打) 分析（極座標扇型チャート）
+          # ---------------------------------------------------------
+          angle_col_name = next(
+              (
+                  c
+                  for c in [
+                      "打球角度",
+                      "LaunchAngle",
+                      "Launch Angle",
+                      "Angle",
+                      "Launch_Angle",
+                  ]
+                  if c in vdf.columns
+              ),
+              None,
+          )
+          if angle_col_name and "xBA" in vdf.columns:
+            st.subheader("📐 打球角度別 打球数 ＆ 予測安打数 (xHits)")
+
+            ang_cleaned = pd.to_numeric(
+                vdf[angle_col_name]
+                .astype(str)
+                .str.replace("°", "")
+                .str.strip(),
+                errors="coerce",
+            )
+            xba_cleaned = pd.to_numeric(vdf["xBA"], errors="coerce")
+
+            angle_df = pd.DataFrame(
+                {"angle": ang_cleaned, "xBA": xba_cleaned}
+            ).dropna()
+
+            if not angle_df.empty:
+              # -60°から90°まで5°刻みでブロック化
+              bins = np.arange(-60, 95, 5)
+              angle_df["bin"] = pd.cut(
+                  angle_df["angle"], bins=bins, right=False
+              )
+
+              # ブロックごとの集計（打球数・xBA合計・xBA平均）
+              grouped_angle = (
+                  angle_df.groupby("bin", observed=False)
+                  .agg(
+                      count=("xBA", "count"),
+                      sum_xba=("xBA", "sum"),
+                      mean_xba=("xBA", "mean"),
+                  )
+                  .reset_index()
+              )
+
+              grouped_angle["bin_start"] = [
+                  b.left for b in grouped_angle["bin"]
+              ]
+              grouped_angle["center"] = [
+                  b.left + 2.5 for b in grouped_angle["bin"]
+              ]
+
+              fig_angle = go.Figure()
+
+              # 1. 全打球数 (グレーの領域)
+              fig_angle.add_trace(
+                  go.Barpolar(
+                      r=grouped_angle["count"],
+                      theta=grouped_angle["center"],
+                      width=4.2,
+                      name="打球数 (Batted Balls)",
+                      marker_color="rgba(180, 180, 180, 0.65)",
+                      marker_line_color="white",
+                      marker_line_width=1,
+                      hoverinfo="text",
+                      hovertext=[
+                          f"角度: {s}°〜{s+5}°<br>打球数: {c}球<br>平均xBA:"
+                          f" {m:.3f}<br>予測安打数 (xHits): {x:.2f}本"
+                          for s, c, m, x in zip(
+                              grouped_angle["bin_start"],
+                              grouped_angle["count"],
+                              grouped_angle["mean_xba"],
+                              grouped_angle["sum_xba"],
+                          )
+                      ],
+                  )
+              )
+
+              # 2. 予測安打数 xHits (赤色の領域)
+              fig_angle.add_trace(
+                  go.Barpolar(
+                      r=grouped_angle["sum_xba"],
+                      theta=grouped_angle["center"],
+                      width=4.2,
+                      name="予測安打数 (xHits)",
+                      marker_color="rgba(255, 70, 70, 0.85)",
+                      marker_line_color="red",
+                      marker_line_width=1,
+                      hoverinfo="text",
+                      hovertext=[
+                          f"角度: {s}°〜{s+5}°<br>予測安打数 (xHits):"
+                          f" {x:.2f}本<br>平均xBA: {m:.3f}"
+                          for s, x, m in zip(
+                              grouped_angle["bin_start"],
+                              grouped_angle["sum_xba"],
+                              grouped_angle["mean_xba"],
+                          )
+                      ],
+                  )
+              )
+
+              fig_angle.update_layout(
+                  polar=dict(
+                      sector=[-60, 90],  # -60°〜90°の扇型表示
+                      radialaxis=dict(
+                          visible=True,
+                          showticklabels=True,
+                          ticks="outside",
+                          angle=90,
+                      ),
+                      angularaxis=dict(
+                          direction="counterclockwise",
+                          period=360,
+                          tickmode="array",
+                          tickvals=[-60, -40, -20, 0, 20, 40, 60, 80],
+                          ticktext=[
+                              "-60°",
+                              "-40°",
+                              "-20°",
+                              "0°",
+                              "20°",
+                              "40°",
+                              "60°",
+                              "80°",
+                          ],
+                      ),
+                  ),
+                  margin=dict(l=30, r=30, t=30, b=30),
+                  height=520,
+                  showlegend=True,
+                  legend=dict(
+                      orientation="h",
+                      yanchor="bottom",
+                      y=1.05,
+                      xanchor="center",
+                      x=0.5,
+                  ),
+              )
+
+              st.plotly_chart(fig_angle, use_container_width=True)
 
           st.subheader(f"📍 {target_metric}：インパクトポイント")
           fig_point = go.Figure()
