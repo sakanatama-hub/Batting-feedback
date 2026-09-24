@@ -4,3 +4,5 @@ numpy
 plotly
 st-gsheets-connection
 openpyxl
+scikit-learn
+joblib
