@@ -1,6 +1,6 @@
 import base64
 import datetime
-import re  # 背番号抽出用
+import re
 import joblib
 import numpy as np
 import pandas as pd
@@ -13,7 +13,7 @@ PW = "1189"
 GITHUB_USER = "sakanatama-hub"
 GITHUB_REPO = "Batting-feedback"
 GITHUB_FILE_PATH = "data.csv"
-GITHUB_GAME_FILE_PATH = "game_data.csv"  # 追加：試合用パス
+GITHUB_GAME_FILE_PATH = "game_data.csv"
 GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
 
 # --- ストライクゾーン定義 (cm) ---
@@ -53,17 +53,18 @@ PLAYERS = list(PLAYER_HANDS.keys())
 @st.cache_resource
 def load_knn_model():
   try:
-    return joblib.load("xwoba_knn_model.pkl")
-  except Exception:
-    return None
+    model = joblib.load("xwoba_knn_model.pkl")
+    return model, None
+  except Exception as e:
+    return None, str(e)
 
 
-knn_model = load_knn_model()
+knn_model, model_error = load_knn_model()
 
 
 def calculate_xwoba_xba_df(df, model):
-  """打球速度と打球角度からxwOBAおよびxBAを予測してDFに追加する関数"""
-  if model is None or df.empty:
+  """打球速度(km/h)と打球角度からmphへ変換し、xwOBAおよびxBAを予測してDFに追加する関数"""
+  if df.empty or model is None:
     df["xwOBA"] = np.nan
     df["xBA"] = np.nan
     return df
@@ -72,7 +73,13 @@ def calculate_xwoba_xba_df(df, model):
   speed_col = next(
       (
           c
-          for c in ["打球速度", "ExitVelocity", "Exit Speed", "Ball Speed"]
+          for c in [
+              "打球速度",
+              "ExitVelocity",
+              "Exit Speed",
+              "Ball Speed",
+              "Exit_Speed",
+          ]
           if c in df.columns
       ),
       None,
@@ -80,28 +87,59 @@ def calculate_xwoba_xba_df(df, model):
   angle_col = next(
       (
           c
-          for c in ["打球角度", "LaunchAngle", "Launch Angle", "Angle"]
+          for c in [
+              "打球角度",
+              "LaunchAngle",
+              "Launch Angle",
+              "Angle",
+              "Launch_Angle",
+          ]
           if c in df.columns
       ),
       None,
   )
 
   if not speed_col or not angle_col:
+    st.warning(
+        "⚠️ xwOBA/xBA計算に必要な列が見つかりません。\n"
+        f"検出結果 -> 速度列: `{speed_col}`, 角度列: `{angle_col}`\n"
+        f"（データ内の現在の列一覧: `{list(df.columns)}`）"
+    )
     df["xwOBA"] = np.nan
     df["xBA"] = np.nan
     return df
 
-  speed = pd.to_numeric(df[speed_col], errors="coerce")
-  angle = pd.to_numeric(df[angle_col], errors="coerce")
+  # 単位の文字("km/h"等)が含まれていた場合を除去して数値化
+  speed_raw = (
+      df[speed_col]
+      .astype(str)
+      .str.replace("km/h", "", case=False)
+      .str.replace("kmh", "", case=False)
+      .str.strip()
+  )
+  angle_raw = df[angle_col].astype(str).str.replace("°", "").str.strip()
 
-  valid_mask = speed.notna() & angle.notna()
+  speed_kph = pd.to_numeric(speed_raw, errors="coerce")
+  angle = pd.to_numeric(angle_raw, errors="coerce")
+
+  valid_mask = speed_kph.notna() & angle.notna()
+
+  if not valid_mask.any():
+    st.warning(
+        f"⚠️ `{speed_col}` と `{angle_col}`"
+        " の両方に有効な数値が入っているデータが 0 件です。"
+    )
+
   xwoba_list = [np.nan] * len(df)
   xba_list = [np.nan] * len(df)
 
   if valid_mask.any():
-    features = np.column_stack(
-        (speed[valid_mask].values, angle[valid_mask].values)
-    )
+    # km/h を mph に変換 (1 km/h ≒ 0.621371 mph)
+    speed_mph = speed_kph[valid_mask].values * 0.621371
+    angle_vals = angle[valid_mask].values
+
+    features = np.column_stack((speed_mph, angle_vals))
+
     try:
       if isinstance(model, dict):
         xwoba_preds = (
@@ -130,15 +168,15 @@ def calculate_xwoba_xba_df(df, model):
           xwoba_list[i] = xwoba_preds[idx]
           xba_list[i] = xba_preds[idx]
           idx += 1
-    except Exception:
-      pass
+    except Exception as pred_err:
+      st.error(f"⚠️ xwOBA/xBA の予測計算中にエラーが発生しました: {pred_err}")
 
   df["xwOBA"] = xwoba_list
   df["xBA"] = xba_list
   return df
 
 
-# --- 追加：コース文字列を座標に変換する関数 ---
+# --- コース文字列を座標に変換する関数 ---
 def convert_course_to_coord(course_str):
   if pd.isna(course_str):
     return None, None
@@ -195,7 +233,6 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
   if val == 0 or pd.isna(val):
     return "rgba(255, 255, 255, 0.1)", "white"
 
-  # xwOBA の色定義 (.320基準)
   if "xwOBA" in metric_name:
     if val >= 0.360:
       return "rgba(255, 0, 0, 0.9)", "white"
@@ -208,7 +245,6 @@ def get_color(val, metric_name, row_idx=None, eff_val=None):
     else:
       return "rgba(0, 0, 255, 0.9)", "white"
 
-  # xBA (予測打率) の色定義 (.250基準)
   if "xBA" in metric_name:
     if val >= 0.300:
       return "rgba(255, 0, 0, 0.9)", "white"
@@ -466,10 +502,11 @@ else:
   )
 
   # ---------------------------------------------------------
-  # タブ1：個人分析 (xwOBA・xBA対応版)
+  # タブ1：個人分析
   # ---------------------------------------------------------
   with tab1:
     st.title("🔵 個人別打撃分析")
+
     if not db_df.empty:
       player_col = (
           "Player Name" if "Player Name" in db_df.columns else db_df.columns[-1]
@@ -493,7 +530,7 @@ else:
 
       pdf = db_df[db_df[player_col] == target_player].copy()
       if not pdf.empty:
-        # xwOBA / xBA の計算を実行してDFに追加
+        # xwOBA / xBA の計算を実行してDFに追加（km/h -> mph 変換内蔵）
         pdf = calculate_xwoba_xba_df(pdf, knn_model)
 
         pdf["Date_Only_Str"] = pdf["DateTime"].astype(str).str.extract(
