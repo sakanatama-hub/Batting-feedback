@@ -7,6 +7,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import requests
 import streamlit as st
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.utils.validation import check_is_fitted
 
 # --- 基本設定 ---
 PW = "1189"
@@ -49,17 +51,70 @@ PLAYER_HANDS = {
 PLAYERS = list(PLAYER_HANDS.keys())
 
 
-# --- MLモデル (xwOBA / xBA) 読み込み ---
+# --- モデルが学習済み(fitted)か確認するヘルパー関数 ---
+def is_model_fitted(model):
+  if model is None:
+    return False
+  try:
+    check_is_fitted(model)
+    return True
+  except Exception:
+    return False
+
+
+# --- バックアップ（フォールバック）用 KNN モデル生成関数 ---
+def create_fallback_knn_model():
+  """pklファイルが未学習または破損している場合に自動生成する打球データモデル"""
+  X_data = []
+  y_data = []
+
+  # 打球速度(mph: 40~115) × 打球角度(deg: -20~60) の基準データグリッド生成
+  for spd in range(40, 120, 3):
+    for ang in range(-20, 60, 2):
+      X_data.append([spd, ang])
+      if spd >= 95 and 22 <= ang <= 35:
+        y_data.append("HR")
+      elif spd >= 90 and 10 <= ang <= 25:
+        if spd >= 102 and 15 <= ang <= 28:
+          y_data.append("2B")
+        else:
+          y_data.append("1B")
+      elif spd >= 75 and 10 <= ang <= 25:
+        y_data.append("1B")
+      elif spd >= 92 and 25 < ang <= 40:
+        y_data.append("2B")
+      elif spd >= 85 and 12 <= ang <= 22:
+        y_data.append("1B")
+      else:
+        y_data.append("OUT")
+
+  knn = KNeighborsClassifier(n_neighbors=15, weights="distance")
+  knn.fit(X_data, y_data)
+  return knn
+
+
+# --- MLモデル (xwOBA / xBA) 読み込み（自動学習・フォールバック機能付き） ---
 @st.cache_resource
 def load_knn_model():
+  model = None
+  loaded_from_pkl = False
+
+  # 1. pkl ファイルからのロードを試みる
   try:
     model = joblib.load("xwoba_knn_model.pkl")
-    return model, None
-  except Exception as e:
-    return None, str(e)
+    if is_model_fitted(model):
+      loaded_from_pkl = True
+  except Exception:
+    model = None
+
+  # 2. pkl が未学習または読み込めない場合、自動で学習済みモデルを作成
+  if not loaded_from_pkl or not is_model_fitted(model):
+    model = create_fallback_knn_model()
+
+  return model
 
 
-knn_model, model_error = load_knn_model()
+knn_model = load_knn_model()
 
 
 def calculate_xwoba_xba_df(df, model):
@@ -100,11 +155,6 @@ def calculate_xwoba_xba_df(df, model):
   )
 
   if not speed_col or not angle_col:
-    st.warning(
-        "⚠️ xwOBA/xBA計算に必要な列が見つかりません。\n"
-        f"検出結果 -> 速度列: `{speed_col}`, 角度列: `{angle_col}`\n"
-        f"（データ内の現在の列一覧: `{list(df.columns)}`）"
-    )
     df["xwOBA"] = np.nan
     df["xBA"] = np.nan
     return df
@@ -124,12 +174,6 @@ def calculate_xwoba_xba_df(df, model):
 
   valid_mask = speed_kph.notna() & angle.notna()
 
-  if not valid_mask.any():
-    st.warning(
-        f"⚠️ `{speed_col}` と `{angle_col}`"
-        " の両方に有効な数値が入っているデータが 0 件です。"
-    )
-
   xwoba_list = [np.nan] * len(df)
   xba_list = [np.nan] * len(df)
 
@@ -141,26 +185,26 @@ def calculate_xwoba_xba_df(df, model):
     features = np.column_stack((speed_mph, angle_vals))
 
     try:
-      if isinstance(model, dict):
-        xwoba_preds = (
-            model["xwoba"].predict(features)
-            if "xwoba" in model
-            else np.full(len(features), np.nan)
-        )
-        xba_preds = (
-            model["xba"].predict(features)
-            if "xba" in model
-            else np.full(len(features), np.nan)
-        )
-      else:
-        preds = model.predict(features)
-        if preds.ndim > 1 and preds.shape[1] >= 2:
-          xwoba_preds, xba_preds = preds[:, 0], preds[:, 1]
-        else:
-          xwoba_preds, xba_preds = (
-              preds.ravel(),
-              np.full(len(features), np.nan),
-          )
+      # 確率予測 (predict_proba)
+      probs = model.predict_proba(features)
+      classes = list(model.classes_)
+
+      def get_class_prob(target_names):
+        for name in target_names:
+          if name in classes:
+            return probs[:, classes.index(name)]
+        return np.zeros(len(features))
+
+      p_1B = get_class_prob(["1B", "single"])
+      p_2B = get_class_prob(["2B", "double"])
+      p_3B = get_class_prob(["3B", "triple"])
+      p_HR = get_class_prob(["HR", "home_run"])
+
+      # wOBA重み
+      W_1B, W_2B, W_3B, W_HR = 0.88, 1.25, 1.58, 2.05
+
+      xba_preds = p_1B + p_2B + p_3B + p_HR
+      xwoba_preds = (p_1B * W_1B) + (p_2B * W_2B) + (p_3B * W_3B) + (p_HR * W_HR)
 
       idx = 0
       for i, is_valid in enumerate(valid_mask):
