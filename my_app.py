@@ -871,7 +871,7 @@ else:
           st.plotly_chart(fig_heat, use_container_width=True)
 
           # ---------------------------------------------------------
-          # 【新機能】📐 打球角度別 xBA (予測安打) 分析（極座標扇型チャート）
+          # 📐 打球角度(3°刻み) × 打球速度(10km/h刻み) xBA極座標分析
           # ---------------------------------------------------------
           angle_col_name = next(
               (
@@ -887,8 +887,26 @@ else:
               ),
               None,
           )
-          if angle_col_name and "xBA" in vdf.columns:
-            st.subheader("📐 打球角度別 打球数 ＆ 予測安打数 (xHits)")
+          speed_col_name = next(
+              (
+                  c
+                  for c in [
+                      "打球速度",
+                      "ExitVelocity",
+                      "Exit Speed",
+                      "Ball Speed",
+                      "Exit_Speed",
+                  ]
+                  if c in vdf.columns
+              ),
+              None,
+          )
+
+          if angle_col_name and speed_col_name and "xBA" in vdf.columns:
+            st.subheader(
+                "📐 打球角度 (3°刻み) × 打球速度 (10km/h刻み) 別 xBA"
+                " 分析"
+            )
 
             ang_cleaned = pd.to_numeric(
                 vdf[angle_col_name]
@@ -897,22 +915,49 @@ else:
                 .str.strip(),
                 errors="coerce",
             )
+            spd_cleaned = pd.to_numeric(
+                vdf[speed_col_name]
+                .astype(str)
+                .str.replace("km/h", "", case=False)
+                .str.replace("kmh", "", case=False)
+                .str.strip(),
+                errors="coerce",
+            )
             xba_cleaned = pd.to_numeric(vdf["xBA"], errors="coerce")
 
-            angle_df = pd.DataFrame(
-                {"angle": ang_cleaned, "xBA": xba_cleaned}
-            ).dropna()
+            angle_df = pd.DataFrame({
+                "angle": ang_cleaned,
+                "speed": spd_cleaned,
+                "xBA": xba_cleaned,
+            }).dropna()
+
+            # 表示範囲を -50° 〜 +50° に限定
+            angle_df = angle_df[
+                (angle_df["angle"] >= -50) & (angle_df["angle"] <= 50)
+            ]
 
             if not angle_df.empty:
-              # -60°から90°まで5°刻みでブロック化
-              bins = np.arange(-60, 95, 5)
-              angle_df["bin"] = pd.cut(
-                  angle_df["angle"], bins=bins, right=False
+              # 角度: -50°〜+50° (3°刻み)
+              bins_angle = np.arange(-50, 53, 3)
+
+              # 速度: 10km/h刻み (データの最小〜最大範囲)
+              min_spd = int(np.floor(angle_df["speed"].min() / 10) * 10)
+              max_spd = int(np.ceil(angle_df["speed"].max() / 10) * 10)
+              if min_spd >= max_spd:
+                max_spd = min_spd + 10
+              bins_speed = np.arange(
+                  max(30, min_spd), min(180, max_spd + 10), 10
               )
 
-              # ブロックごとの集計（打球数・xBA合計・xBA平均）
-              grouped_angle = (
-                  angle_df.groupby("bin", observed=False)
+              angle_df["bin_ang"] = pd.cut(
+                  angle_df["angle"], bins=bins_angle, right=False
+              )
+              angle_df["bin_spd"] = pd.cut(
+                  angle_df["speed"], bins=bins_speed, right=False
+              )
+
+              grouped = (
+                  angle_df.groupby(["bin_ang", "bin_spd"], observed=False)
                   .agg(
                       count=("xBA", "count"),
                       sum_xba=("xBA", "sum"),
@@ -921,101 +966,94 @@ else:
                   .reset_index()
               )
 
-              grouped_angle["bin_start"] = [
-                  b.left for b in grouped_angle["bin"]
-              ]
-              grouped_angle["center"] = [
-                  b.left + 2.5 for b in grouped_angle["bin"]
-              ]
+              grouped_valid = grouped[grouped["count"] > 0].copy()
 
-              fig_angle = go.Figure()
+              if not grouped_valid.empty:
+                r_list = []
+                base_list = []
+                theta_list = []
+                width_list = []
+                color_list = []
+                hover_text_list = []
 
-              # 1. 全打球数 (グレーの領域)
-              fig_angle.add_trace(
-                  go.Barpolar(
-                      r=grouped_angle["count"],
-                      theta=grouped_angle["center"],
-                      width=4.2,
-                      name="打球数 (Batted Balls)",
-                      marker_color="rgba(180, 180, 180, 0.65)",
-                      marker_line_color="white",
-                      marker_line_width=1,
-                      hoverinfo="text",
-                      hovertext=[
-                          f"角度: {s}°〜{s+5}°<br>打球数: {c}球<br>平均xBA:"
-                          f" {m:.3f}<br>予測安打数 (xHits): {x:.2f}本"
-                          for s, c, m, x in zip(
-                              grouped_angle["bin_start"],
-                              grouped_angle["count"],
-                              grouped_angle["mean_xba"],
-                              grouped_angle["sum_xba"],
-                          )
-                      ],
+                for _, row in grouped_valid.iterrows():
+                  ang_b = row["bin_ang"]
+                  spd_b = row["bin_spd"]
+
+                  ang_start = ang_b.left
+                  ang_end = ang_b.right
+                  ang_center = (ang_start + ang_end) / 2.0
+
+                  spd_start = spd_b.left
+                  spd_end = spd_b.right
+
+                  r_list.append(spd_end - spd_start)  # バンド幅 (10km/h)
+                  base_list.append(spd_start)  # 開始速度 (km/h)
+                  theta_list.append(ang_center)  # 角度中心 (deg)
+                  width_list.append(ang_end - ang_start)  # 角度幅 (3°)
+
+                  m_xba = row["mean_xba"]
+                  color_list.append(m_xba)
+
+                  hover_text_list.append(
+                      f"角度: {ang_start}° 〜 {ang_end}°<br>"
+                      f"速度: {spd_start} 〜 {spd_end} km/h<br>"
+                      f"打球数: {row['count']}球<br>"
+                      f"平均xBA: {m_xba:.3f}<br>"
+                      f"予測安打数 (xHits): {row['sum_xba']:.2f}本"
                   )
-              )
 
-              # 2. 予測安打数 xHits (赤色の領域)
-              fig_angle.add_trace(
-                  go.Barpolar(
-                      r=grouped_angle["sum_xba"],
-                      theta=grouped_angle["center"],
-                      width=4.2,
-                      name="予測安打数 (xHits)",
-                      marker_color="rgba(255, 70, 70, 0.85)",
-                      marker_line_color="red",
-                      marker_line_width=1,
-                      hoverinfo="text",
-                      hovertext=[
-                          f"角度: {s}°〜{s+5}°<br>予測安打数 (xHits):"
-                          f" {x:.2f}本<br>平均xBA: {m:.3f}"
-                          for s, x, m in zip(
-                              grouped_angle["bin_start"],
-                              grouped_angle["sum_xba"],
-                              grouped_angle["mean_xba"],
-                          )
-                      ],
-                  )
-              )
+                fig_angle = go.Figure()
 
-              fig_angle.update_layout(
-                  polar=dict(
-                      sector=[-60, 90],  # -60°〜90°の扇型表示
-                      radialaxis=dict(
-                          visible=True,
-                          showticklabels=True,
-                          ticks="outside",
-                          angle=90,
-                      ),
-                      angularaxis=dict(
-                          direction="counterclockwise",
-                          period=360,
-                          tickmode="array",
-                          tickvals=[-60, -40, -20, 0, 20, 40, 60, 80],
-                          ticktext=[
-                              "-60°",
-                              "-40°",
-                              "-20°",
-                              "0°",
-                              "20°",
-                              "40°",
-                              "60°",
-                              "80°",
-                          ],
-                      ),
-                  ),
-                  margin=dict(l=30, r=30, t=30, b=30),
-                  height=520,
-                  showlegend=True,
-                  legend=dict(
-                      orientation="h",
-                      yanchor="bottom",
-                      y=1.05,
-                      xanchor="center",
-                      x=0.5,
-                  ),
-              )
+                fig_angle.add_trace(
+                    go.Barpolar(
+                        r=r_list,
+                        base=base_list,
+                        theta=theta_list,
+                        width=width_list,
+                        marker_color=color_list,
+                        marker_colorscale="YlOrRd",  # 黄→オレンジ→赤のグラデーション
+                        marker_cmin=0.0,
+                        marker_cmax=0.6,
+                        marker_colorbar=dict(
+                            title="平均xBA",
+                            thickness=15,
+                            len=0.8,
+                        ),
+                        marker_line_color="white",
+                        marker_line_width=0.5,
+                        hoverinfo="text",
+                        hovertext=hover_text_list,
+                        name="xBA Block",
+                    )
+                )
 
-              st.plotly_chart(fig_angle, use_container_width=True)
+                fig_angle.update_layout(
+                    polar=dict(
+                        sector=[-50, 50],  # -50° 〜 +50° に限定
+                        radialaxis=dict(
+                            visible=True,
+                            showticklabels=True,
+                            ticks="outside",
+                            title=dict(
+                                text="打球速度 (km/h)", font=dict(size=12)
+                            ),
+                            angle=90,
+                        ),
+                        angularaxis=dict(
+                            direction="counterclockwise",
+                            period=360,
+                            tickmode="array",
+                            tickvals=list(range(-50, 51, 10)),
+                            ticktext=[f"{a}°" for a in range(-50, 51, 10)],
+                        ),
+                    ),
+                    margin=dict(l=30, r=30, t=30, b=30),
+                    height=550,
+                    showlegend=False,
+                )
+
+                st.plotly_chart(fig_angle, use_container_width=True)
 
           st.subheader(f"📍 {target_metric}：インパクトポイント")
           fig_point = go.Figure()
