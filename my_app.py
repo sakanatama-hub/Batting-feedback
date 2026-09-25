@@ -659,31 +659,12 @@ else:
 
           valid_vals = vdf[target_metric].dropna()
 
-          # --- xwOBA / xBA サマリー ＆ 指標カード表示 ---
-          mean_xwoba = vdf["xwOBA"].mean() if "xwOBA" in vdf.columns else np.nan
-          mean_xba = vdf["xBA"].mean() if "xBA" in vdf.columns else np.nan
-
-          m_col1, m_col2, m_col3, m_col4 = st.columns([2, 2, 2, 3])
-          with m_col1:
-            st.metric(
-                label="🎯 xwOBA (平均)",
-                value=(
-                    f"{mean_xwoba:.3f}" if pd.notna(mean_xwoba) else "データなし"
-                ),
-            )
-          with m_col2:
-            st.metric(
-                label="⚾️ xBA 予測打率 (平均)",
-                value=f"{mean_xba:.3f}" if pd.notna(mean_xba) else "データなし",
-            )
-
+          # --- 選択指標のサマリー表示 (動的表示) ---
           if not valid_vals.empty:
-            m_max = (
-                valid_vals.min()
-                if "時間" in target_metric
-                else valid_vals.max()
-            )
             m_avg = valid_vals.mean()
+            is_time = "時間" in target_metric
+            m_best = valid_vals.min() if is_time else valid_vals.max()
+            label_best = "最速 (MIN)" if is_time else "最高 (MAX)"
             fmt_str = (
                 ".3f"
                 if any(
@@ -693,16 +674,22 @@ else:
                 else ".1f"
             )
 
-            with m_col3:
-              label = "MIN" if "時間" in target_metric else "MAX"
+            m_col1, m_col2, m_col3, m_col4 = st.columns([2, 2, 2, 3])
+            with m_col1:
               st.metric(
-                  label=f"{target_metric} ({label})",
-                  value=f"{m_max:{fmt_str}}",
+                  label=f"📊 {target_metric} (平均)", value=f"{m_avg:{fmt_str}}"
               )
+            with m_col2:
+              st.metric(
+                  label=f"🔥 {target_metric} ({label_best})",
+                  value=f"{m_best:{fmt_str}}",
+              )
+            with m_col3:
+              st.metric(label="⚾️ 対象スイング数", value=f"{len(vdf)} 件")
             with m_col4:
               st.info(
-                  f"💡 選択指標: **{target_metric}** (平均: {m_avg:{fmt_str}} /"
-                  f" 対象スイング: {len(vdf)}件)"
+                  f"💡 選択中の指標: **{target_metric}**\n\n(分析期間・条件内の全"
+                  f" {len(vdf)} スイングを集計)"
               )
 
           st.subheader(f"📊 {target_metric}：ゾーン別詳細分析")
@@ -871,7 +858,7 @@ else:
           st.plotly_chart(fig_heat, use_container_width=True)
 
           # ---------------------------------------------------------
-          # 📐 打球角度 (3°刻み) × 打球速度 (10km/h刻み) 別 xBA マップ (特大表示版)
+          # 📐 打球角度 (3°刻み) × 打球速度 (10km/h刻み) 別 指標マップ (指標連動版)
           # ---------------------------------------------------------
           angle_col_name = next(
               (
@@ -902,9 +889,9 @@ else:
               None,
           )
 
-          if angle_col_name and speed_col_name and "xBA" in vdf.columns:
+          if angle_col_name and speed_col_name and target_metric in vdf.columns:
             st.subheader(
-                "📐 打球角度 (3°刻み) × 打球速度 (10km/h刻み) 別 xBA"
+                f"📐 打球角度 (3°刻み) × 打球速度 (10km/h刻み) 別 {target_metric}"
                 " マップ"
             )
 
@@ -923,12 +910,12 @@ else:
                 .str.strip(),
                 errors="coerce",
             )
-            xba_cleaned = pd.to_numeric(vdf["xBA"], errors="coerce")
+            metric_cleaned = pd.to_numeric(vdf[target_metric], errors="coerce")
 
             angle_df = pd.DataFrame({
                 "angle": ang_cleaned,
                 "speed": spd_cleaned,
-                "xBA": xba_cleaned,
+                "metric_val": metric_cleaned,
             }).dropna()
 
             # 表示範囲を -51° 〜 +51° に限定
@@ -959,9 +946,9 @@ else:
               grouped = (
                   angle_df.groupby(["bin_ang", "bin_spd"], observed=False)
                   .agg(
-                      count=("xBA", "count"),
-                      sum_xba=("xBA", "sum"),
-                      mean_xba=("xBA", "mean"),
+                      count=("metric_val", "count"),
+                      sum_val=("metric_val", "sum"),
+                      mean_val=("metric_val", "mean"),
                   )
                   .reset_index()
               )
@@ -981,6 +968,15 @@ else:
                 text_theta = []
                 text_val = []
 
+                fmt = (
+                    ".3f"
+                    if any(
+                        k in target_metric
+                        for k in ["時間", "手の最大スピード", "xwOBA", "xBA"]
+                    )
+                    else ".1f"
+                )
+
                 for _, row in grouped_valid.iterrows():
                   ang_b = row["bin_ang"]
                   spd_b = row["bin_spd"]
@@ -997,21 +993,38 @@ else:
                   theta_list.append(ang_center)  # 角度中心 (deg)
                   width_list.append(ang_end - ang_start)  # 角度幅 (3°)
 
-                  m_xba = row["mean_xba"]
-                  color_list.append(m_xba)
+                  m_val = row["mean_val"]
+                  color_list.append(m_val)
 
                   hover_text_list.append(
                       f"角度: {ang_start}° 〜 {ang_end}°<br>"
                       f"速度: {spd_start} 〜 {spd_end} km/h<br>"
                       f"打球数: {row['count']}球<br>"
-                      f"平均xBA: {m_xba:.3f}<br>"
-                      f"予測安打数 (xHits): {row['sum_xba']:.2f}本"
+                      f"平均{target_metric}: {m_val:{fmt}}"
                   )
 
-                  # マスの中央位置にテキストを配置 (.350 のように表示)
+                  # マスの中央位置にテキストを配置
                   text_r.append((spd_start + spd_end) / 2.0)
                   text_theta.append(ang_center)
-                  text_val.append(f"{m_xba:.3f}".replace("0.", "."))
+                  val_str = f"{m_val:{fmt}}"
+                  if "xwOBA" in target_metric or "xBA" in target_metric:
+                    val_str = val_str.replace("0.", ".")
+                  text_val.append(val_str)
+
+                # カラースケールとレンジの設定
+                is_time = "時間" in target_metric
+                colorscale = "YlOrRd_r" if is_time else "YlOrRd"
+
+                if "xBA" in target_metric:
+                  cmin_val, cmax_val = 0.0, 0.6
+                elif "xwOBA" in target_metric:
+                  cmin_val, cmax_val = 0.0, 0.8
+                else:
+                  cmin_val = float(grouped_valid["mean_val"].min())
+                  cmax_val = float(grouped_valid["mean_val"].max())
+                  if cmin_val == cmax_val:
+                    cmin_val -= 1.0
+                    cmax_val += 1.0
 
                 fig_angle = go.Figure()
 
@@ -1023,12 +1036,13 @@ else:
                         theta=theta_list,
                         width=width_list,
                         marker_color=color_list,
-                        marker_colorscale="YlOrRd",  # 黄〜オレンジ〜赤
-                        marker_cmin=0.0,
-                        marker_cmax=0.6,
+                        marker_colorscale=colorscale,
+                        marker_cmin=cmin_val,
+                        marker_cmax=cmax_val,
                         marker_colorbar=dict(
                             title=dict(
-                                text="平均xBA", font=dict(size=14, color="black")
+                                text=f"平均{target_metric}",
+                                font=dict(size=14, color="black"),
                             ),
                             thickness=20,
                             len=0.8,
@@ -1038,11 +1052,11 @@ else:
                         marker_line_width=1.0,
                         hoverinfo="text",
                         hovertext=hover_text_list,
-                        name="xBA Block",
+                        name="Block",
                     )
                 )
 
-                # 2. 各マスの中央に xBA 数値を描画 (size=14)
+                # 2. 各マスの中央に数値描画 (size=14)
                 fig_angle.add_trace(
                     go.Scatterpolar(
                         r=text_r,
