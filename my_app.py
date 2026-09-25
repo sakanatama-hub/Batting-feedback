@@ -871,7 +871,7 @@ else:
           st.plotly_chart(fig_heat, use_container_width=True)
 
           # ---------------------------------------------------------
-          # 📐 打球角度 (5°刻み) × 打球速度 (10km/h刻み) 別 xBA マップ (数値直接表示版)
+          # 📐 打球角度 (3°刻み) × 打球速度 (10km/h刻み) 別 xBA マップ (特大表示版)
           # ---------------------------------------------------------
           angle_col_name = next(
               (
@@ -904,7 +904,7 @@ else:
 
           if angle_col_name and speed_col_name and "xBA" in vdf.columns:
             st.subheader(
-                "📐 打球角度 (5°刻み) × 打球速度 (10km/h刻み) 別 xBA"
+                "📐 打球角度 (3°刻み) × 打球速度 (10km/h刻み) 別 xBA"
                 " マップ"
             )
 
@@ -931,14 +931,14 @@ else:
                 "xBA": xba_cleaned,
             }).dropna()
 
-            # 表示範囲を -50° 〜 +50° に限定
+            # 表示範囲を -51° 〜 +51° に限定
             angle_df = angle_df[
-                (angle_df["angle"] >= -50) & (angle_df["angle"] <= 50)
+                (angle_df["angle"] >= -51) & (angle_df["angle"] <= 51)
             ]
 
             if not angle_df.empty:
-              # マスを大きく見やすくするため角度は5°刻み（-50°〜+50°）
-              bins_angle = np.arange(-50, 55, 5)
+              # マスの範囲: 角度3°刻み（-51°〜+51°）
+              bins_angle = np.arange(-51, 54, 3)
 
               # 速度: 10km/h刻み
               min_spd = int(np.floor(angle_df["speed"].min() / 10) * 10)
@@ -976,7 +976,7 @@ else:
                 color_list = []
                 hover_text_list = []
 
-                # 数値（テキスト）配置用
+                # 数値テキスト配置用
                 text_r = []
                 text_theta = []
                 text_val = []
@@ -995,7 +995,7 @@ else:
                   r_list.append(spd_end - spd_start)  # バンド幅 (10km/h)
                   base_list.append(spd_start)  # 開始速度 (km/h)
                   theta_list.append(ang_center)  # 角度中心 (deg)
-                  width_list.append(ang_end - ang_start)  # 角度幅 (5°)
+                  width_list.append(ang_end - ang_start)  # 角度幅 (3°)
 
                   m_xba = row["mean_xba"]
                   color_list.append(m_xba)
@@ -1027,26 +1027,29 @@ else:
                         marker_cmin=0.0,
                         marker_cmax=0.6,
                         marker_colorbar=dict(
-                            title="平均xBA",
-                            thickness=15,
+                            title=dict(
+                                text="平均xBA", font=dict(size=14, color="black")
+                            ),
+                            thickness=20,
                             len=0.8,
+                            tickfont=dict(size=13, color="black"),
                         ),
                         marker_line_color="white",
-                        marker_line_width=1,
+                        marker_line_width=1.0,
                         hoverinfo="text",
                         hovertext=hover_text_list,
                         name="xBA Block",
                     )
                 )
 
-                # 2. 各マスの中央に xBA 数値を直接描画
+                # 2. 各マスの中央に xBA 数値を描画 (size=14)
                 fig_angle.add_trace(
                     go.Scatterpolar(
                         r=text_r,
                         theta=text_theta,
                         mode="text",
                         text=text_val,
-                        textfont=dict(size=12, color="black", weight="bold"),
+                        textfont=dict(size=14, color="black", weight="bold"),
                         hoverinfo="skip",
                         showlegend=False,
                     )
@@ -1054,13 +1057,15 @@ else:
 
                 fig_angle.update_layout(
                     polar=dict(
-                        sector=[-50, 50],  # -50° 〜 +50° の扇型
+                        sector=[-51, 51],  # -51° 〜 +51° の扇型
                         radialaxis=dict(
                             visible=True,
                             showticklabels=True,
                             ticks="outside",
+                            tickfont=dict(size=14, color="black"),
                             title=dict(
-                                text="打球速度 (km/h)", font=dict(size=12)
+                                text="打球速度 (km/h)",
+                                font=dict(size=15, color="black"),
                             ),
                             angle=90,
                         ),
@@ -1070,10 +1075,11 @@ else:
                             tickmode="array",
                             tickvals=list(range(-50, 51, 10)),
                             ticktext=[f"{a}°" for a in range(-50, 51, 10)],
+                            tickfont=dict(size=15, color="black"),
                         ),
                     ),
-                    margin=dict(l=40, r=40, t=40, b=40),
-                    height=750,  # マスを大きくするためグラフ全体を大型化
+                    margin=dict(l=50, r=50, t=50, b=50),
+                    height=950,  # グラフ全体の特大表示サイズ
                     showlegend=False,
                 )
 
