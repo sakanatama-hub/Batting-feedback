@@ -871,7 +871,7 @@ else:
           st.plotly_chart(fig_heat, use_container_width=True)
 
           # ---------------------------------------------------------
-          # 📐 打球角度(3°刻み) × 打球速度(10km/h刻み) xBA極座標分析
+          # 📐 打球角度 (5°刻み) × 打球速度 (10km/h刻み) 別 xBA マップ (数値直接表示版)
           # ---------------------------------------------------------
           angle_col_name = next(
               (
@@ -904,8 +904,8 @@ else:
 
           if angle_col_name and speed_col_name and "xBA" in vdf.columns:
             st.subheader(
-                "📐 打球角度 (3°刻み) × 打球速度 (10km/h刻み) 別 xBA"
-                " 分析"
+                "📐 打球角度 (5°刻み) × 打球速度 (10km/h刻み) 別 xBA"
+                " マップ"
             )
 
             ang_cleaned = pd.to_numeric(
@@ -937,10 +937,10 @@ else:
             ]
 
             if not angle_df.empty:
-              # 角度: -50°〜+50° (3°刻み)
-              bins_angle = np.arange(-50, 53, 3)
+              # マスを大きく見やすくするため角度は5°刻み（-50°〜+50°）
+              bins_angle = np.arange(-50, 55, 5)
 
-              # 速度: 10km/h刻み (データの最小〜最大範囲)
+              # 速度: 10km/h刻み
               min_spd = int(np.floor(angle_df["speed"].min() / 10) * 10)
               max_spd = int(np.ceil(angle_df["speed"].max() / 10) * 10)
               if min_spd >= max_spd:
@@ -976,6 +976,11 @@ else:
                 color_list = []
                 hover_text_list = []
 
+                # 数値（テキスト）配置用
+                text_r = []
+                text_theta = []
+                text_val = []
+
                 for _, row in grouped_valid.iterrows():
                   ang_b = row["bin_ang"]
                   spd_b = row["bin_spd"]
@@ -990,7 +995,7 @@ else:
                   r_list.append(spd_end - spd_start)  # バンド幅 (10km/h)
                   base_list.append(spd_start)  # 開始速度 (km/h)
                   theta_list.append(ang_center)  # 角度中心 (deg)
-                  width_list.append(ang_end - ang_start)  # 角度幅 (3°)
+                  width_list.append(ang_end - ang_start)  # 角度幅 (5°)
 
                   m_xba = row["mean_xba"]
                   color_list.append(m_xba)
@@ -1003,8 +1008,14 @@ else:
                       f"予測安打数 (xHits): {row['sum_xba']:.2f}本"
                   )
 
+                  # マスの中央位置にテキストを配置 (.350 のように表示)
+                  text_r.append((spd_start + spd_end) / 2.0)
+                  text_theta.append(ang_center)
+                  text_val.append(f"{m_xba:.3f}".replace("0.", "."))
+
                 fig_angle = go.Figure()
 
+                # 1. 極座標ブロック（背景色）
                 fig_angle.add_trace(
                     go.Barpolar(
                         r=r_list,
@@ -1012,7 +1023,7 @@ else:
                         theta=theta_list,
                         width=width_list,
                         marker_color=color_list,
-                        marker_colorscale="YlOrRd",  # 黄→オレンジ→赤のグラデーション
+                        marker_colorscale="YlOrRd",  # 黄〜オレンジ〜赤
                         marker_cmin=0.0,
                         marker_cmax=0.6,
                         marker_colorbar=dict(
@@ -1021,16 +1032,29 @@ else:
                             len=0.8,
                         ),
                         marker_line_color="white",
-                        marker_line_width=0.5,
+                        marker_line_width=1,
                         hoverinfo="text",
                         hovertext=hover_text_list,
                         name="xBA Block",
                     )
                 )
 
+                # 2. 各マスの中央に xBA 数値を直接描画
+                fig_angle.add_trace(
+                    go.Scatterpolar(
+                        r=text_r,
+                        theta=text_theta,
+                        mode="text",
+                        text=text_val,
+                        textfont=dict(size=12, color="black", weight="bold"),
+                        hoverinfo="skip",
+                        showlegend=False,
+                    )
+                )
+
                 fig_angle.update_layout(
                     polar=dict(
-                        sector=[-50, 50],  # -50° 〜 +50° に限定
+                        sector=[-50, 50],  # -50° 〜 +50° の扇型
                         radialaxis=dict(
                             visible=True,
                             showticklabels=True,
@@ -1048,8 +1072,8 @@ else:
                             ticktext=[f"{a}°" for a in range(-50, 51, 10)],
                         ),
                     ),
-                    margin=dict(l=30, r=30, t=30, b=30),
-                    height=550,
+                    margin=dict(l=40, r=40, t=40, b=40),
+                    height=750,  # マスを大きくするためグラフ全体を大型化
                     showlegend=False,
                 )
 
