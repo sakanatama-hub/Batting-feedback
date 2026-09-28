@@ -1703,27 +1703,75 @@ else:
           min_date = valid_dates.min().date()
           max_date = valid_dates.max().date()
 
-          selected_date_range = st.date_input(
+          # --- 期間選択（プリセット選択 ＆ 直接指定） ---
+          period_preset = st.selectbox(
               "📅 分析対象の期間を選択",
-              value=(min_date, max_date),
-              min_value=min_date,
-              max_value=max_date,
-              key="date_range_tab4",
+              [
+                  "全期間",
+                  "当日",
+                  "直近1週間",
+                  "直近1ヶ月",
+                  "直近3ヶ月",
+                  "直近6ヶ月",
+                  "直近1年間",
+                  "日付を直接指定",
+              ],
+              key="period_preset_tab4",
           )
 
-          if (
-              isinstance(selected_date_range, tuple)
-              and len(selected_date_range) == 2
-          ):
-            start_date, end_date = selected_date_range
-            gdf = gdf[
-                (gdf["DateTime_Parsed"].dt.date >= start_date)
-                & (gdf["DateTime_Parsed"].dt.date <= end_date)
-            ].copy()
+          if period_preset == "全期間":
+            start_date, end_date = min_date, max_date
+          elif period_preset == "当日":
+            start_date, end_date = max_date, max_date
+          elif period_preset == "直近1週間":
+            start_date, end_date = (
+                max_date - datetime.timedelta(days=7),
+                max_date,
+            )
+          elif period_preset == "直近1ヶ月":
+            start_date, end_date = (
+                max_date - datetime.timedelta(days=30),
+                max_date,
+            )
+          elif period_preset == "直近3ヶ月":
+            start_date, end_date = (
+                max_date - datetime.timedelta(days=90),
+                max_date,
+            )
+          elif period_preset == "直近6ヶ月":
+            start_date, end_date = (
+                max_date - datetime.timedelta(days=180),
+                max_date,
+            )
+          elif period_preset == "直近1年間":
+            start_date, end_date = (
+                max_date - datetime.timedelta(days=365),
+                max_date,
+            )
+          else:
+            selected_date_range = st.date_input(
+                "📅 期間を直接指定",
+                value=(min_date, max_date),
+                min_value=min_date,
+                max_value=max_date,
+                key="date_range_tab4",
+            )
+            if (
+                isinstance(selected_date_range, tuple)
+                and len(selected_date_range) == 2
+            ):
+              start_date, end_date = selected_date_range
+            else:
+              start_date, end_date = min_date, max_date
+
+          gdf = gdf[
+              (gdf["DateTime_Parsed"].dt.date >= start_date)
+              & (gdf["DateTime_Parsed"].dt.date <= end_date)
+          ].copy()
 
           if gdf.empty:
             st.warning(
-                "選択された期間に一致するデータがありません。期間を広げてください。"
+                "選択された期間に一致するデータがありません。期間を変更してください。"
             )
           else:
             raw_cats = sorted(gdf["試合区別"].dropna().unique().tolist())
