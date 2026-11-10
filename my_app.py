@@ -1830,13 +1830,21 @@ else:
               target_metric_h = st.selectbox(
                   "分析する指標を選択", valid_metrics_h, key="m_tab4_h"
               )
+              
+              # --- ここで「手の最大スピード」が選択された場合、バットスピードとの割り算（効率換算）を実行 ---
+              if "手の最大スピード" in target_metric_h and "バットスピード (km/h)" in final_gdf.columns:
+                final_gdf[target_metric_h] = pd.to_numeric(
+                    final_gdf["バットスピード (km/h)"], errors="coerce"
+                ) / pd.to_numeric(final_gdf[target_metric_h], errors="coerce")
+              else:
+                final_gdf[target_metric_h] = pd.to_numeric(
+                    final_gdf[target_metric_h], errors="coerce"
+                )
+
               SMALLER_IS_BETTER = any(
                   k in target_metric_h for k in ["時間", "度", "誤差", "ブレ"]
               )
 
-              final_gdf[target_metric_h] = pd.to_numeric(
-                  final_gdf[target_metric_h], errors="coerce"
-              )
               final_gdf["StrikeZoneX"] = pd.to_numeric(
                   final_gdf["StrikeZoneX"], errors="coerce"
               )
@@ -2016,7 +2024,6 @@ else:
 
                     if v > 0:
                       txt = fmt.format(v)
-                      # --- 文字サイズを 21 に変更（さらに2サイズ拡大） ---
                       fig_heat_g.add_annotation(
                           x=(x0 + x1) / 2,
                           y=(y0 + y1) / 2 + (h_grid * 0.15),
@@ -2032,7 +2039,6 @@ else:
                           font=dict(size=10, color=f_color),
                       )
 
-                # --- グラフ全体の幅・高さを調整し、横長になりすぎないように設定 ---
                 fig_heat_g.update_layout(
                     width=420,
                     height=500,
