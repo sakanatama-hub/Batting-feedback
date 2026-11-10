@@ -1804,6 +1804,7 @@ else:
             if not final_gdf.empty:
               st.markdown(f"### {display_title}")
 
+              # --- 「加速」をキーワードに追加し、「体の回転によるバットの加速の大きさ」を選択可能に修正 ---
               keywords_h = [
                   "速度",
                   "角度",
@@ -1812,7 +1813,9 @@ else:
                   "時間",
                   "スピード",
                   "飛距離",
+                  "G)",
                   "度",
+                  "加速",
               ]
               valid_metrics_h = [
                   c
@@ -1830,9 +1833,11 @@ else:
               target_metric_h = st.selectbox(
                   "分析する指標を選択", valid_metrics_h, key="m_tab4_h"
               )
-              
-              # --- ここで「手の最大スピード」が選択された場合、バットスピードとの割り算（効率換算）を実行 ---
-              if "手の最大スピード" in target_metric_h and "バットスピード (km/h)" in final_gdf.columns:
+
+              if (
+                  "手の最大スピード" in target_metric_h
+                  and "バットスピード (km/h)" in final_gdf.columns
+              ):
                 final_gdf[target_metric_h] = pd.to_numeric(
                     final_gdf["バットスピード (km/h)"], errors="coerce"
                 ) / pd.to_numeric(final_gdf[target_metric_h], errors="coerce")
