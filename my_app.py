@@ -2016,13 +2016,13 @@ else:
 
                     if v > 0:
                       txt = fmt.format(v)
-                      # --- ここで文字サイズを 16 から 19 へ変更 ---
+                      # --- 文字サイズを 21 に変更（さらに2サイズ拡大） ---
                       fig_heat_g.add_annotation(
                           x=(x0 + x1) / 2,
                           y=(y0 + y1) / 2 + (h_grid * 0.15),
                           text=txt,
                           showarrow=False,
-                          font=dict(size=19, color=f_color, weight="bold"),
+                          font=dict(size=21, color=f_color, weight="bold"),
                       )
                       fig_heat_g.add_annotation(
                           x=(x0 + x1) / 2,
@@ -2032,11 +2032,15 @@ else:
                           font=dict(size=10, color=f_color),
                       )
 
+                # --- グラフ全体の幅・高さを調整し、横長になりすぎないように設定 ---
                 fig_heat_g.update_layout(
-                    width=500,
-                    height=550,
+                    width=420,
+                    height=500,
                     xaxis=dict(
-                        visible=False, range=[SZ_X_MIN - 10, SZ_X_MAX + 10]
+                        visible=False,
+                        range=[SZ_X_MIN - 18, SZ_X_MAX + 18],
+                        scaleanchor="y",
+                        scaleratio=1.0,
                     ),
                     yaxis=dict(
                         visible=False, range=[SZ_Y_MIN - 10, SZ_Y_MAX + 10]
